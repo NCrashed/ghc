@@ -42,11 +42,19 @@ module Debug.Trace (
         -- $markers
         traceMarker,
         traceMarkerIO,
+
+        -- * Eventlog options
+        -- $eventlog_options
+        setEventLogHandle,
+        setEventLogCFile,
+        getEventLogCFile
   ) where
 
+import System.IO 
 import System.IO.Unsafe
 
 import Foreign.C.String
+import Foreign.C.Types
 import GHC.Base
 import qualified GHC.Foreign
 import GHC.IO.Encoding
@@ -293,3 +301,46 @@ traceMarkerIO :: String -> IO ()
 traceMarkerIO msg =
   GHC.Foreign.withCString utf8 msg $ \(Ptr p) -> IO $ \s ->
     case traceMarker# p s of s' -> (# s', () #)
+
+-- $eventlog_options
+-- 
+-- By default the eventlog uses local file with name of the executable to dump all events.
+-- The following functions allows to redefine the behavior and redirect the stream of 
+-- bytes into user specified handler. Thus is very helpful for implementing complex 
+-- tools, for instance remote profilers.
+
+-- | The 'setEventLogHandle' function changes current sink of the eventlog, if eventlog
+-- profiling is available and enabled at runtime.
+--
+-- The second parameter @setEventLogHandle h True@ defines whether old sink should be 
+-- finalized and closed or not. Not closing it could be helpful for temporal redirection
+-- of eventlog data into not standard sink and then restoring to the default file sink.
+--
+-- @since 4.10.0.0
+setEventLogHandle :: Handle -> Bool -> IO ()
+setEventLogHandle = error "unimplemented setEventLogHandle"
+
+-- | The 'setEventLogCFile' function changes current sink of the eventlog, if eventlog
+-- profiling is available and enabled at runtime.
+--
+-- The second parameter @setEventLogCFile cf True@ defines whether old sink should be 
+-- finalized and closed or not. Not closing it could be helpful for temporal redirection
+-- of eventlog data into not standard sink and then restoring to the default file sink.
+--
+-- The function is more low-level than 'setEventLogHandle' but doesn't recreate underlying
+-- file descriptor and is intended to use with 'getEventLogCFile' to save and restore 
+-- current sink of the eventlog.
+--
+-- @since 4.10.0.0
+setEventLogCFile :: Ptr CFile -> Bool -> IO ()
+setEventLogCFile = error "unimplemented setEventLogCFile"
+
+-- | The 'getEventLogCFile' function returns current sink of the eventlog, if eventlog
+-- profiling is available and enabled at runtime.
+--
+-- The function is intented to be used with 'setEventLogCFile' to save and restore 
+-- current sink of the eventlog.
+--
+-- @since 4.10.0.0
+getEventLogCFile :: IO (Ptr CFile)
+getEventLogCFile = error "unimplemented getEventLogCFile"
