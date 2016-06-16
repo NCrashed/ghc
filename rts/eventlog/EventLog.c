@@ -121,6 +121,7 @@ EventType eventTypes[NUM_GHC_EVENT_TAGS];
 static void initEventsBuf(EventsBuf* eb, StgWord64 size, EventCapNo capno);
 static void writeEventLoggingHeader(EventsBuf* eb);
 static void resetEventsBuf(EventsBuf* eb);
+static void flushEventsBufs(void);
 static void printAndClearEventBuf (EventsBuf *eventsBuf);
 
 static void postEventType(EventsBuf *eb, EventType *et);
@@ -304,7 +305,7 @@ void
 writeEventLoggingHeader(EventsBuf *eb) 
 {
     StgWord8 t;
-    
+
     // Write in buffer: the header begin marker.
     postInt32(eb, EVENT_HEADER_BEGIN);
 
@@ -474,13 +475,7 @@ writeEventLoggingHeader(EventsBuf *eb)
 void
 endEventLogging(void)
 {
-    uint32_t c;
-
-    // Flush all events remaining in the buffers.
-    for (c = 0; c < n_capabilities; ++c) {
-        printAndClearEventBuf(&capEventBuf[c]);
-    }
-    printAndClearEventBuf(&eventBuf);
+    flushEventsBufs();
     resetEventsBuf(&eventBuf); // we don't want the block marker
 
     // Mark end of events (data).
@@ -492,6 +487,18 @@ endEventLogging(void)
     if (event_log_file != NULL) {
         fclose(event_log_file);
     }
+}
+
+void 
+flushEventsBufs(void)
+{
+    uint32_t c;
+
+    // Flush all events remaining in the buffers.
+    for (c = 0; c < n_capabilities; ++c) {
+        printAndClearEventBuf(&capEventBuf[c]);
+    }
+    printAndClearEventBuf(&eventBuf);
 }
 
 void
@@ -1214,12 +1221,12 @@ void postEventType(EventsBuf *eb, EventType *et)
 
 void rts_setEventLogSink(FILE *sink, StgBool closePrev)
 {
-  // TODO: flush and finalize previous stream
-
   ACQUIRE_LOCK(&eventBufMutex);
 
   if (closePrev) {
-    // TODO: close log file
+    endEventLogging();
+  } else {
+    flushEventsBufs(); // Don't write end data marker
   }
 
   // Actually update the file pointer
