@@ -1203,4 +1203,23 @@ void postEventType(EventsBuf *eb, EventType *et)
     postInt32(eb, EVENT_ET_END);
 }
 
+void rts_setEventLogSink(FILE *sink, StgBool closePrev)
+{
+  ACQUIRE_LOCK(&eventBufMutex);
+
+  if (closePrev) {
+    // TODO: close log file
+  }
+
+  event_log_file = sink;
+  // TODO: print header, factor out header printing from init
+
+  RELEASE_LOCK(&eventBufMutex);
+}
+
+FILE* rts_getEventLogSink()
+{ 
+  return event_log_file;
+}
+
 #endif /* TRACING */
