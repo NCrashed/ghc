@@ -119,6 +119,7 @@ typedef struct _EventType {
 EventType eventTypes[NUM_GHC_EVENT_TAGS];
 
 static void initEventsBuf(EventsBuf* eb, StgWord64 size, EventCapNo capno);
+static void writeEventLoggingHeader(EventsBuf* eb);
 static void resetEventsBuf(EventsBuf* eb);
 static void printAndClearEventBuf (EventsBuf *eventsBuf);
 
@@ -213,7 +214,7 @@ static inline void postInt32(EventsBuf *eb, StgInt32 i)
 void
 initEventLogging(void)
 {
-    StgWord8 t, c;
+    StgWord8 c;
     uint32_t n_caps;
     char *prog;
 
@@ -281,11 +282,34 @@ initEventLogging(void)
 
     initEventsBuf(&eventBuf, EVENT_LOG_SIZE, (EventCapNo)(-1));
 
+    writeEventLoggingHeader(&eventBuf);
+
+    // Flush capEventBuf with header.
+    /*
+     * Flush header and data begin marker to the file, thus preparing the
+     * file to have events written to it.
+     */
+    printAndClearEventBuf(&eventBuf);
+
+    for (c = 0; c < n_caps; ++c) {
+        postBlockMarker(&capEventBuf[c]);
+    }
+
+#ifdef THREADED_RTS
+    initMutex(&eventBufMutex);
+#endif
+}
+
+void 
+writeEventLoggingHeader(EventsBuf *eb) 
+{
+    StgWord8 t;
+    
     // Write in buffer: the header begin marker.
-    postInt32(&eventBuf, EVENT_HEADER_BEGIN);
+    postInt32(eb, EVENT_HEADER_BEGIN);
 
     // Mark beginning of event types in the header.
-    postInt32(&eventBuf, EVENT_HET_BEGIN);
+    postInt32(eb, EVENT_HET_BEGIN);
     for (t = 0; t < NUM_GHC_EVENT_TAGS; ++t) {
 
         eventTypes[t].etNum = t;
@@ -434,32 +458,17 @@ initEventLogging(void)
         }
 
         // Write in buffer: the start event type.
-        postEventType(&eventBuf, &eventTypes[t]);
+        postEventType(eb, &eventTypes[t]);
     }
 
     // Mark end of event types in the header.
-    postInt32(&eventBuf, EVENT_HET_END);
+    postInt32(eb, EVENT_HET_END);
 
     // Write in buffer: the header end marker.
-    postInt32(&eventBuf, EVENT_HEADER_END);
+    postInt32(eb, EVENT_HEADER_END);
 
     // Prepare event buffer for events (data).
-    postInt32(&eventBuf, EVENT_DATA_BEGIN);
-
-    // Flush capEventBuf with header.
-    /*
-     * Flush header and data begin marker to the file, thus preparing the
-     * file to have events written to it.
-     */
-    printAndClearEventBuf(&eventBuf);
-
-    for (c = 0; c < n_caps; ++c) {
-        postBlockMarker(&capEventBuf[c]);
-    }
-
-#ifdef THREADED_RTS
-    initMutex(&eventBufMutex);
-#endif
+    postInt32(eb, EVENT_DATA_BEGIN);
 }
 
 void
@@ -1205,14 +1214,24 @@ void postEventType(EventsBuf *eb, EventType *et)
 
 void rts_setEventLogSink(FILE *sink, StgBool closePrev)
 {
+  // TODO: flush and finalize previous stream
+
   ACQUIRE_LOCK(&eventBufMutex);
 
   if (closePrev) {
     // TODO: close log file
   }
 
+  // Actually update the file pointer
   event_log_file = sink;
-  // TODO: print header, factor out header printing from init
+
+  // Write header to empty eventBuf
+  writeEventLoggingHeader(&eventBuf);
+  /*
+   * Flush header and data begin marker to the new file, thus preparing the
+   * file to have events written to it.
+   */
+  printAndClearEventBuf(&eventBuf);
 
   RELEASE_LOCK(&eventBufMutex);
 }
