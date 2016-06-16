@@ -43,7 +43,9 @@ INLINE_HEADER void rts_setEventLogSink(FILE    *sink      STG_UNUSED,
 { /* nothing */ }
 
 INLINE_HEADER FILE* rts_getEventLogSink(void)
-{ /* nothing */ }
+{ 
+  return NULL;
+}
 
 #endif 
 
