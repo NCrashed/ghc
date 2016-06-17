@@ -1232,8 +1232,8 @@ void rts_setEventLogSink(FILE *sink, StgBool closePrev)
   // Actually update the file pointer
   event_log_file = sink;
 
-  // Write header to empty eventBuf
-  writeEventLoggingHeader(&eventBuf);
+  resetEventsBuf(&eventBuf); // we don't want the block marker
+  writeEventLoggingHeader(&eventBuf); // Write header to empty eventBuf
   /*
    * Flush header and data begin marker to the new file, thus preparing the
    * file to have events written to it.
