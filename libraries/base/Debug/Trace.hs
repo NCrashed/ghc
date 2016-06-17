@@ -52,17 +52,25 @@ module Debug.Trace (
 
 import System.IO 
 import System.IO.Unsafe
+import System.IO.Error
+import System.Posix.Types (Fd(..))
 
 import Foreign.C.String
 import Foreign.C.Types
 import Foreign.Marshal.Utils (fromBool)
 import GHC.Base
 import qualified GHC.Foreign
-import GHC.IO.Encoding
+import GHC.IO.Handle (hDuplicate)
+import GHC.IO.Handle.Internals (withHandle', flushWriteBuffer)
+import GHC.IO.Handle.Types (Handle(..), Handle__(..), HandleType(..))
+import GHC.IO.Exception (IOErrorType(..))
+import qualified GHC.IO.FD as FD
+import qualified GHC.IO.Handle.FD as FD
 import GHC.Ptr
 import GHC.Show
 import GHC.Stack
 import Data.List
+import Data.Typeable (cast)
 
 -- $tracing
 --
@@ -310,6 +318,9 @@ traceMarkerIO msg =
 -- bytes into user specified handler. Thus is very helpful for implementing complex 
 -- tools, for instance remote profilers.
 
+foreign import ccall unsafe "stdio.h fdopen" 
+  fdopen :: Fd -> CString -> IO (Ptr CFile)
+
 -- | The 'setEventLogHandle' function changes current sink of the eventlog, if eventlog
 -- profiling is available and enabled at runtime.
 --
@@ -319,7 +330,30 @@ traceMarkerIO msg =
 --
 -- @since 4.10.0.0
 setEventLogHandle :: Handle -> Bool -> IO ()
-setEventLogHandle = error "unimplemented setEventLogHandle"
+setEventLogHandle h closePrev = withCString "a" $ \iomode -> do 
+  h' <- hDuplicate h -- to prevent closing original handle
+  fd <- handleToFd h'
+  cf <- fdopen fd iomode
+  setEventLogCFile cf closePrev
+  where 
+    handleToFd h@(FileHandle _ m) = withHandle' "handleToFd" h m $ handleToFd' h
+    handleToFd h@(DuplexHandle _ r w) = do 
+      _ <- withHandle' "handleToFd" h r $ handleToFd' h
+      withHandle' "handleToFd" h w $ handleToFd' h
+
+    handleToFd' :: Handle -> Handle__ -> IO (Handle__, Fd)
+    handleToFd' h h_@Handle__{haDevice = hdev} = do
+      case cast hdev of
+        Nothing -> ioError (ioeSetErrorString (mkIOError IllegalOperation
+                                               "handleToFd" (Just h) Nothing)
+                            "handle is not a file descriptor")
+        Just fd -> do
+         -- converting a Handle into an Fd effectively means
+         -- letting go of the Handle; it is put into a closed
+         -- state as a result.
+         flushWriteBuffer h_
+         FD.release fd
+         return (h_ { haType = ClosedHandle }, Fd (FD.fdFD fd))
 
 foreign import ccall unsafe "rts/EventLog.h rts_setEventLogSink" 
   rts_setEventLogSink :: Ptr CFile -> CInt -> IO ()
