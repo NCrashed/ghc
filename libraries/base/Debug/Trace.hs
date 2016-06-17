@@ -55,6 +55,7 @@ import System.IO.Unsafe
 
 import Foreign.C.String
 import Foreign.C.Types
+import Foreign.Marshal.Utils (fromBool)
 import GHC.Base
 import qualified GHC.Foreign
 import GHC.IO.Encoding
@@ -339,7 +340,7 @@ foreign import ccall unsafe "rts/EventLog.h rts_getEventLogSink"
 --
 -- @since 4.10.0.0
 setEventLogCFile :: Ptr CFile -> Bool -> IO ()
-setEventLogCFile = error "unimplemented setEventLogCFile"
+setEventLogCFile pf closePrev = rts_setEventLogSink pf (fromBool closePrev)
 
 -- | The 'getEventLogCFile' function returns current sink of the eventlog, if eventlog
 -- profiling is available and enabled at runtime.
@@ -349,4 +350,4 @@ setEventLogCFile = error "unimplemented setEventLogCFile"
 --
 -- @since 4.10.0.0
 getEventLogCFile :: IO (Ptr CFile)
-getEventLogCFile = error "unimplemented getEventLogCFile"
+getEventLogCFile = rts_getEventLogSink
