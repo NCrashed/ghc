@@ -38,11 +38,11 @@ FILE* rts_getEventLogSink(void);
 
 #else /* !TRACING */
 
-INLINE_HEADER void rts_setEventLogSink(FILE    *sink      STG_UNUSED, 
+void rts_setEventLogSink(FILE    *sink      STG_UNUSED, 
                                        StgBool  closePrev STG_UNUSED)
 { /* nothing */ }
 
-INLINE_HEADER FILE* rts_getEventLogSink(void)
+FILE* rts_getEventLogSink(void)
 { 
   return NULL;
 }
