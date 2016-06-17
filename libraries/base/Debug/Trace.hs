@@ -320,6 +320,12 @@ traceMarkerIO msg =
 setEventLogHandle :: Handle -> Bool -> IO ()
 setEventLogHandle = error "unimplemented setEventLogHandle"
 
+foreign import ccall unsafe "rts/EventLog.h rts_setEventLogSink" 
+  rts_setEventLogSink :: Ptr CFile -> CInt -> IO ()
+
+foreign import ccall unsafe "rts/EventLog.h rts_getEventLogSink" 
+  rts_getEventLogSink :: IO (Ptr CFile)
+
 -- | The 'setEventLogCFile' function changes current sink of the eventlog, if eventlog
 -- profiling is available and enabled at runtime.
 --
