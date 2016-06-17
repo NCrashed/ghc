@@ -1219,7 +1219,9 @@ void postEventType(EventsBuf *eb, EventType *et)
     postInt32(eb, EVENT_ET_END);
 }
 
-void rts_setEventLogSink(FILE *sink, StgBool closePrev)
+void rts_setEventLogSink(FILE *sink,
+                         StgBool closePrev,
+                         StgBool emitHeader)
 {
   ACQUIRE_LOCK(&eventBufMutex);
 
@@ -1228,17 +1230,19 @@ void rts_setEventLogSink(FILE *sink, StgBool closePrev)
   } else {
     flushEventsBufs(); // Don't write end data marker
   }
+  resetEventsBuf(&eventBuf); // we don't want the block marker
 
   // Actually update the file pointer
   event_log_file = sink;
 
-  resetEventsBuf(&eventBuf); // we don't want the block marker
-  writeEventLoggingHeader(&eventBuf); // Write header to empty eventBuf
-  /*
-   * Flush header and data begin marker to the new file, thus preparing the
-   * file to have events written to it.
-   */
-  printAndClearEventBuf(&eventBuf);
+  if(emitHeader) {
+    writeEventLoggingHeader(&eventBuf); // Write header to empty eventBuf
+    /*
+     * Flush header and data begin marker to the new file, thus preparing the
+     * file to have events written to it.
+     */
+    printAndClearEventBuf(&eventBuf);
+  }
 
   RELEASE_LOCK(&eventBufMutex);
 }

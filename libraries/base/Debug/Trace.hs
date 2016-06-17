@@ -65,7 +65,6 @@ import GHC.IO.Handle.Internals (withHandle', flushWriteBuffer)
 import GHC.IO.Handle.Types (Handle(..), Handle__(..), HandleType(..))
 import GHC.IO.Exception (IOErrorType(..))
 import qualified GHC.IO.FD as FD
-import qualified GHC.IO.Handle.FD as FD
 import GHC.Ptr
 import GHC.Show
 import GHC.Stack
@@ -324,39 +323,43 @@ foreign import ccall unsafe "stdio.h fdopen"
 -- | The 'setEventLogHandle' function changes current sink of the eventlog, if eventlog
 -- profiling is available and enabled at runtime.
 --
--- The second parameter @setEventLogHandle h True@ defines whether old sink should be 
--- finalized and closed or not. Not closing it could be helpful for temporal redirection
--- of eventlog data into not standard sink and then restoring to the default file sink.
+-- The second parameter defines whether old sink should be finalized and closed or not. 
+-- Preserving it could be helpful for temporal redirection of eventlog data into not 
+-- standard sink and then restoring to the default file sink.
 --
+-- The third parameter defines whether new header section should be emitted to the new
+-- sink. Emitting header to already started eventlog streams will corrupt the structure 
+-- of eventlog format.
+
 -- @since 4.10.0.0
-setEventLogHandle :: Handle -> Bool -> IO ()
-setEventLogHandle h closePrev = withCString "a" $ \iomode -> do 
+setEventLogHandle :: Handle -> Bool -> Bool -> IO ()
+setEventLogHandle h closePrev emitHeader = withCString "a" $ \iomode -> do 
   h' <- hDuplicate h -- to prevent closing original handle
   fd <- handleToFd h'
   cf <- fdopen fd iomode
-  setEventLogCFile cf closePrev
+  setEventLogCFile cf closePrev emitHeader
   where 
-    handleToFd h@(FileHandle _ m) = withHandle' "handleToFd" h m $ handleToFd' h
-    handleToFd h@(DuplexHandle _ r w) = do 
-      _ <- withHandle' "handleToFd" h r $ handleToFd' h
-      withHandle' "handleToFd" h w $ handleToFd' h
+    handleToFd fh@(FileHandle _ m) = withHandle' "handleToFd" fh m $ handleToFd' fh
+    handleToFd fh@(DuplexHandle _ r w) = do 
+      _ <- withHandle' "handleToFd" fh r $ handleToFd' fh
+      withHandle' "handleToFd" fh w $ handleToFd' fh
 
     handleToFd' :: Handle -> Handle__ -> IO (Handle__, Fd)
-    handleToFd' h h_@Handle__{haDevice = hdev} = do
+    handleToFd' fh fh_@Handle__{haDevice = hdev} = do
       case cast hdev of
         Nothing -> ioError (ioeSetErrorString (mkIOError IllegalOperation
-                                               "handleToFd" (Just h) Nothing)
+                                               "handleToFd" (Just fh) Nothing)
                             "handle is not a file descriptor")
         Just fd -> do
          -- converting a Handle into an Fd effectively means
          -- letting go of the Handle; it is put into a closed
          -- state as a result.
-         flushWriteBuffer h_
+         flushWriteBuffer fh_
          FD.release fd
-         return (h_ { haType = ClosedHandle }, Fd (FD.fdFD fd))
+         return (fh_ { haType = ClosedHandle }, Fd (FD.fdFD fd))
 
 foreign import ccall unsafe "rts/EventLog.h rts_setEventLogSink" 
-  rts_setEventLogSink :: Ptr CFile -> CInt -> IO ()
+  rts_setEventLogSink :: Ptr CFile -> CInt -> CInt -> IO ()
 
 foreign import ccall unsafe "rts/EventLog.h rts_getEventLogSink" 
   rts_getEventLogSink :: IO (Ptr CFile)
@@ -364,17 +367,23 @@ foreign import ccall unsafe "rts/EventLog.h rts_getEventLogSink"
 -- | The 'setEventLogCFile' function changes current sink of the eventlog, if eventlog
 -- profiling is available and enabled at runtime.
 --
--- The second parameter @setEventLogCFile cf True@ defines whether old sink should be 
--- finalized and closed or not. Not closing it could be helpful for temporal redirection
--- of eventlog data into not standard sink and then restoring to the default file sink.
+-- The second parameter defines whether old sink should be finalized and closed or not. 
+-- Preserving it could be helpful for temporal redirection of eventlog data into not 
+-- standard sink and then restoring to the default file sink.
+--
+-- The third parameter defines whether new header section should be emitted to the new
+-- sink. Emitting header to already started eventlog streams will corrupt the structure 
+-- of eventlog format.
 --
 -- The function is more low-level than 'setEventLogHandle' but doesn't recreate underlying
 -- file descriptor and is intended to use with 'getEventLogCFile' to save and restore 
 -- current sink of the eventlog.
 --
 -- @since 4.10.0.0
-setEventLogCFile :: Ptr CFile -> Bool -> IO ()
-setEventLogCFile pf closePrev = rts_setEventLogSink pf (fromBool closePrev)
+setEventLogCFile :: Ptr CFile -> Bool -> Bool -> IO ()
+setEventLogCFile pf closePrev emitHeader = rts_setEventLogSink pf 
+  (fromBool closePrev)
+  (fromBool emitHeader)
 
 -- | The 'getEventLogCFile' function returns current sink of the eventlog, if eventlog
 -- profiling is available and enabled at runtime.

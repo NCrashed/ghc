@@ -24,8 +24,14 @@ extern "C" {
  * sink is closed only if closePrev flag is on.
  *
  * Writing to the sink is protected by global mutex.
+ *
+ * The function puts header to the new sink only when emitHeader flag
+ * is on. User might not want the header if it is switching to 
+ * already existed eventlog handle that was switched away recently.
  */
-void rts_setEventLogSink(FILE *sink, StgBool closePrev);
+void rts_setEventLogSink(FILE *sink,
+                         StgBool closePrev,
+                         StgBool emitHeader);
 
 /*
  * Get current file stream that is used for global event log sink.
@@ -38,8 +44,9 @@ FILE* rts_getEventLogSink(void);
 
 #else /* !TRACING */
 
-void rts_setEventLogSink(FILE    *sink      STG_UNUSED, 
-                                       StgBool  closePrev STG_UNUSED)
+void rts_setEventLogSink(FILE    *sink       STG_UNUSED, 
+                         StgBool  closePrev  STG_UNUSED,
+                         StgBool  emitHeader STG_UNUSED)
 { /* nothing */ }
 
 FILE* rts_getEventLogSink(void)
