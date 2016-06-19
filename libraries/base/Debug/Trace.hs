@@ -333,7 +333,7 @@ foreign import ccall unsafe "stdio.h fdopen"
 
 -- @since 4.10.0.0
 setEventLogHandle :: Handle -> Bool -> Bool -> IO ()
-setEventLogHandle h closePrev emitHeader = withCString "a" $ \iomode -> do 
+setEventLogHandle h closePrev emitHeader = withCString "w" $ \iomode -> do 
   h' <- hDuplicate h -- to prevent closing original handle
   fd <- handleToFd h'
   cf <- fdopen fd iomode

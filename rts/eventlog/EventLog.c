@@ -30,6 +30,7 @@
 static pid_t event_log_pid = -1;
 
 static char *event_log_filename = NULL;
+static eventLogSink event_log_callback = NULL;
 
 // File for logging events
 FILE *event_log_file = NULL;
@@ -1120,18 +1121,23 @@ void printAndClearEventBuf (EventsBuf *ebuf)
 
     if (ebuf->begin != NULL && ebuf->pos != ebuf->begin)
     {
-        StgInt8 *begin = ebuf->begin;
-        while (begin < ebuf->pos) {
-            StgWord64 remain = ebuf->pos - begin;
-            StgWord64 written = fwrite(begin, 1, remain, event_log_file);
-            if (written == 0) {
-                debugBelch(
-                    "printAndClearEventLog: fwrite() failed to write anything;"
-                    " tried to write numBytes=%" FMT_Word64, remain);
-                resetEventsBuf(ebuf);
-                return;
+        if (event_log_file != NULL) {
+            StgInt8 *begin = ebuf->begin;
+            while (begin < ebuf->pos) {
+                StgWord64 remain = ebuf->pos - begin;
+                StgWord64 written = fwrite(begin, 1, remain, event_log_file);
+                if (written == 0) {
+                    debugBelch(
+                        "printAndClearEventLog: fwrite() failed to write anything;"
+                        " tried to write numBytes=%" FMT_Word64, remain);
+                    resetEventsBuf(ebuf);
+                    return;
+                }
+                begin += written;
             }
-            begin += written;
+        }
+        if (event_log_callback != NULL) {
+            event_log_callback(ebuf->begin, ebuf->pos - ebuf->begin);
         }
 
         resetEventsBuf(ebuf);
@@ -1235,7 +1241,7 @@ void rts_setEventLogSink(FILE *sink,
   // Actually update the file pointer
   event_log_file = sink;
 
-  if(emitHeader) {
+  if (emitHeader) {
     writeEventLoggingHeader(&eventBuf); // Write header to empty eventBuf
     /*
      * Flush header and data begin marker to the new file, thus preparing the
@@ -1250,6 +1256,28 @@ void rts_setEventLogSink(FILE *sink,
 FILE* rts_getEventLogSink()
 { 
   return event_log_file;
+}
+
+void rts_setEventLogMemorySink(eventLogSink sink,
+                               StgBool closePrev,
+                               StgBool emitHeader)
+{
+  ACQUIRE_LOCK(&eventBufMutex);
+
+  if (closePrev) {
+    endEventLogging();
+    event_log_file = NULL;
+  }
+
+  event_log_callback = sink;
+
+  if (emitHeader) {
+    resetEventsBuf(&eventBuf);
+    writeEventLoggingHeader(&eventBuf);
+    printAndClearEventBuf(&eventBuf);
+  }
+
+  RELEASE_LOCK(&eventBufMutex);
 }
 
 #endif /* TRACING */

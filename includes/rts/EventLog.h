@@ -16,6 +16,11 @@
 extern "C" {
 #endif
 
+/*
+ * Eventlog callback on buffer dump
+ */
+typedef void (*eventLogSink)(StgInt8*, StgWord64);
+
 #ifdef TRACING
 /*
  * Set custom file stream for global event log sink.
@@ -42,6 +47,24 @@ void rts_setEventLogSink(FILE *sink,
  */
 FILE* rts_getEventLogSink(void);
 
+/*
+ * Set callback on eventlog dump to file sink.
+ *
+ * File sink is closed only if closePrev flag is on.
+ *
+ * Writing to the sink is protected by global mutex.
+ *
+ * The function puts header to the new sink only when emitHeader flag
+ * is on. 
+ *
+ * WARNING: Don't ever try to feed Haskell callback to the function as
+ * it likely leads to deadlocks (reentering scheduler or multiple overflow
+ * of the eventlog buffer).
+ */
+void rts_setEventLogMemorySink(eventLogSink sink,
+                               StgBool closePrev,
+                               StgBool emitHeader);
+
 #else /* !TRACING */
 
 void rts_setEventLogSink(FILE    *sink       STG_UNUSED, 
@@ -53,6 +76,11 @@ FILE* rts_getEventLogSink(void)
 { 
   return NULL;
 }
+
+void rts_setEventLogMemorySink(eventLogSink sink       STG_UNUSED,
+                               StgBool      closePrev  STG_UNUSED,
+                               StgBool      emitHeader STG_UNUSED)
+{ /* nothing */ }
 
 #endif 
 
