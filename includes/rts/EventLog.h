@@ -65,6 +65,21 @@ void rts_setEventLogMemorySink(eventLogSink sink,
                                StgBool closePrev,
                                StgBool emitHeader);
 
+/*
+ * If RTS started with '-lm' flag then eventlog is stored in memory buffer.
+ * 
+ * The function allows to pop chunks of the buffer. Return value of 0 means
+ * that there is no any filled chunk of data.
+ *
+ * If the function returns nonzero value the parameter contains full chunk 
+ * of eventlog data with size of the returned value. Caller must free the
+ * buffer, the buffer isn't referenced anywhere anymore.
+ *
+ * If nobody calls the function with '-lm' flag then the memory is kinda
+ * to be exhausted.
+ */
+StgWord64 rts_getEventLogChunk(StgInt8** ptr);
+
 #else /* !TRACING */
 
 void rts_setEventLogSink(FILE    *sink       STG_UNUSED, 
@@ -81,6 +96,11 @@ void rts_setEventLogMemorySink(eventLogSink sink       STG_UNUSED,
                                StgBool      closePrev  STG_UNUSED,
                                StgBool      emitHeader STG_UNUSED)
 { /* nothing */ }
+
+StgWord64 rts_getEventLogChunk(StgInt8** ptr STG_UNUSED)
+{
+  return 0;
+}
 
 #endif 
 

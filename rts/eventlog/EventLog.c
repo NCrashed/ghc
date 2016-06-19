@@ -17,6 +17,8 @@
 #include "Stats.h"
 #include "EventLog.h"
 
+#include "ChunkedBuffer.h"
+
 #include <string.h>
 #include <stdio.h>
 #ifdef HAVE_SYS_TYPES_H
@@ -35,6 +37,7 @@ static eventLogSink event_log_callback = NULL;
 // File for logging events
 FILE *event_log_file = NULL;
 
+// TODO: support resizing of buffers
 #define EVENT_LOG_SIZE 2 * (1024 * 1024) // 2MB
 
 static int flushCount;
@@ -300,6 +303,10 @@ initEventLogging(void)
 #ifdef THREADED_RTS
     initMutex(&eventBufMutex);
 #endif
+
+    if (RtsFlags.TraceFlags.in_memory) {
+      initEventLogChunkedBuffer(EVENT_LOG_SIZE);
+    }
 }
 
 void 
@@ -487,6 +494,10 @@ endEventLogging(void)
 
     if (event_log_file != NULL) {
         fclose(event_log_file);
+    }
+
+    if (RtsFlags.TraceFlags.in_memory) {
+      destroyEventLogChunkedBuffer();
     }
 }
 
@@ -1138,6 +1149,9 @@ void printAndClearEventBuf (EventsBuf *ebuf)
         }
         if (event_log_callback != NULL) {
             event_log_callback(ebuf->begin, ebuf->pos - ebuf->begin);
+        }
+        if (RtsFlags.TraceFlags.in_memory) {
+            writeChunkedLog(ebuf->begin, ebuf->pos - ebuf->begin);
         }
 
         resetEventsBuf(ebuf);
