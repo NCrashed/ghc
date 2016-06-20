@@ -37,8 +37,9 @@ static eventLogSink event_log_callback = NULL;
 // File for logging events
 FILE *event_log_file = NULL;
 
-// TODO: support resizing of buffers
+// default size
 #define EVENT_LOG_SIZE 2 * (1024 * 1024) // 2MB
+static StgWord64 currentEventLogSize;
 
 static int flushCount;
 
@@ -284,13 +285,14 @@ initEventLogging(void)
 #else
     n_caps = 1;
 #endif
+    currentEventLogSize = EVENT_LOG_SIZE;
     moreCapEventBufs(0,n_caps);
 
-    initEventsBuf(&eventBuf, EVENT_LOG_SIZE, (EventCapNo)(-1));
+    initEventsBuf(&eventBuf, currentEventLogSize, (EventCapNo)(-1));
 
     // Init memory buffer before writing the header
     if (RtsFlags.TraceFlags.in_memory) {
-      initEventLogChunkedBuffer(EVENT_LOG_SIZE);
+      initEventLogChunkedBuffer(currentEventLogSize);
     }
 
     writeEventLoggingHeader(&eventBuf);
@@ -499,7 +501,7 @@ endEventLogging(void)
     }
 
     if (RtsFlags.TraceFlags.in_memory) {
-      destroyEventLogChunkedBuffer();
+        destroyEventLogChunkedBuffer();
     }
 }
 
@@ -518,7 +520,7 @@ flushEventsBufs(void)
 void
 moreCapEventBufs (uint32_t from, uint32_t to)
 {
-    uint32_t c;
+    uint32_t c; 
 
     if (from > 0) {
         capEventBuf = stgReallocBytes(capEventBuf, to * sizeof(EventsBuf),
@@ -529,7 +531,7 @@ moreCapEventBufs (uint32_t from, uint32_t to)
     }
 
     for (c = from; c < to; ++c) {
-        initEventsBuf(&capEventBuf[c], EVENT_LOG_SIZE, c);
+        initEventsBuf(&capEventBuf[c], currentEventLogSize, c);
     }
 
     // The from == 0 already covered in initEventLogging, so we are interested
@@ -1161,6 +1163,11 @@ void printAndClearEventBuf (EventsBuf *ebuf)
 
         postBlockMarker(ebuf);
     }
+
+    if (ebuf->size != currentEventLogSize) {
+      resetEventsBuf(ebuf);
+      resizeEventsBuf(ebuf, currentEventLogSize);
+    }
 }
 
 void initEventsBuf(EventsBuf* eb, StgWord64 size, EventCapNo capno)
@@ -1173,28 +1180,16 @@ void initEventsBuf(EventsBuf* eb, StgWord64 size, EventCapNo capno)
 
 void resizeEventsBuf(EventsBuf* eb, StgWord64 size)
 {
-    StgWord64 reminder;
+    StgInt8 *newBegin;
     StgInt8 *oldBegin;
-
-    reminder = eb->pos - eb->begin;
-    if (reminder >= size) {
-        printAndClearEventBuf(eb);
-    }
-
-    reminder = eb->pos - eb->begin;
-    if (reminder >= size) {
-        debugBelch("resizeEventsBuf: new size is too small = %" FMT_Word64 
-          " for reminder = %" FMT_Word64, size, reminder);
-        return;
-    }
-
+    
+    newBegin = stgMallocBytes(size, "resizeEventsBuf");
     oldBegin = eb->begin;
-    eb->begin = stgMallocBytes(size, "resizeEventsBuf");
-    memcpy(eb->begin, oldBegin, reminder);
+
+    eb->begin = eb->pos = newBegin;
     stgFree(oldBegin);
 
     eb->size = size;
-    eb->pos = eb->begin + reminder;
 }
 
 void resizeEventLog(StgWord64 size)
@@ -1207,11 +1202,8 @@ void resizeEventLog(StgWord64 size)
         resizeEventLogChunkedBuffer(size);
     }
 
-    // Resize buffers for capabilities
-    for (c = 0; c < n_capabilities; ++c) {
-        resizeEventsBuf(&capEventBuf[c], size);
-    }
-    resizeEventsBuf(&eventBuf, size);
+    currentEventLogSize = size; 
+    // Capabilities buffers will be resized while flushing
 
     RELEASE_LOCK(&eventBufMutex);
 }
@@ -1354,10 +1346,9 @@ void rts_resizeEventLog(StgWord64 size)
 StgWord64 rts_getEventLogBuffersSize(void)
 {
     ACQUIRE_LOCK(&eventBufMutex);
-
-    return eventBuf.size;
-
+    StgWord64 ret = currentEventLogSize;
     RELEASE_LOCK(&eventBufMutex);
+    return ret;
 }
 
 #endif /* TRACING */

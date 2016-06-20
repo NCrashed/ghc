@@ -326,6 +326,21 @@ traceMarkerIO msg =
 foreign import ccall unsafe "stdio.h fdopen" 
   fdopen :: Fd -> CString -> IO (Ptr CFile)
 
+foreign import ccall "rts/EventLog.h rts_setEventLogSink" 
+  rts_setEventLogSink :: Ptr CFile -> CInt -> CInt -> IO ()
+
+foreign import ccall "rts/EventLog.h rts_getEventLogSink" 
+  rts_getEventLogSink :: IO (Ptr CFile)
+
+foreign import ccall "rts/EventLog.h rts_resizeEventLog" 
+  rts_resizeEventLog :: CSize -> IO ()
+
+foreign import ccall "rts/EventLog.h rts_getEventLogBuffersSize" 
+  rts_getEventLogBuffersSize :: IO CSize
+
+foreign import ccall "rts/EventLog.h rts_getEventLogChunk" 
+  rts_getEventLogChunk :: Ptr (Ptr CChar) -> IO CSize
+
 -- | The 'setEventLogHandle' function changes current sink of the eventlog, if eventlog
 -- profiling is available and enabled at runtime.
 --
@@ -364,11 +379,6 @@ setEventLogHandle h closePrev emitHeader = withCString "w" $ \iomode -> do
          FD.release fd
          return (fh_ { haType = ClosedHandle }, Fd (FD.fdFD fd))
 
-foreign import ccall unsafe "rts/EventLog.h rts_setEventLogSink" 
-  rts_setEventLogSink :: Ptr CFile -> CInt -> CInt -> IO ()
-
-foreign import ccall unsafe "rts/EventLog.h rts_getEventLogSink" 
-  rts_getEventLogSink :: IO (Ptr CFile)
 
 -- | The 'setEventLogCFile' function changes current sink of the eventlog, if eventlog
 -- profiling is available and enabled at runtime.
@@ -401,12 +411,6 @@ setEventLogCFile pf closePrev emitHeader = rts_setEventLogSink pf
 getEventLogCFile :: IO (Ptr CFile)
 getEventLogCFile = rts_getEventLogSink
 
-foreign import ccall unsafe "rts/EventLog.h rts_resizeEventLog" 
-  rts_resizeEventLog :: CSize -> IO ()
-
-foreign import ccall unsafe "rts/EventLog.h rts_getEventLogBuffersSize" 
-  rts_getEventLogBuffersSize :: IO CSize
-
 -- | Setting size of internal eventlog buffers. The size should be not
 -- too small to contain at least one event.
 --
@@ -424,9 +428,6 @@ setEventLogBufferSize size = rts_resizeEventLog (fromIntegral size)
 -- See also: 'setEventLogBufferSize', 'getEventLogChunk'
 getEventLogBufferSize :: IO Word
 getEventLogBufferSize = fmap fromIntegral rts_getEventLogBuffersSize
-
-foreign import ccall unsafe "rts/EventLog.h rts_getEventLogChunk" 
-  rts_getEventLogChunk :: Ptr (Ptr CChar) -> IO CSize
 
 -- | Get next portion of the eventlog data.
 --
