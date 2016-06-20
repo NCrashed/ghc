@@ -8,7 +8,8 @@
 
 #include "PosixSource.h"
 #include "Rts.h"
-
+#include "RtsUtils.h"
+ 
 #include "ChunkedBuffer.h"
 
 #include <stdio.h>
@@ -25,8 +26,8 @@ StgBool mutexInited = rtsFalse;
 
 ChunkedNode* newChunkedNode(ChunkedNode *prev, StgWord64 chunkSize) 
 {
-  ChunkedNode *node = malloc(sizeof(ChunkedNode));
-  node->mem = malloc(chunkSize);
+  ChunkedNode *node = stgMallocBytes(sizeof(ChunkedNode), "ChunkedNode struct");
+  node->mem = stgMallocBytes(chunkSize, "ChunkedNode buffer");
   node->next = NULL;
   if (prev != NULL) {
     prev->next = node;
@@ -36,7 +37,7 @@ ChunkedNode* newChunkedNode(ChunkedNode *prev, StgWord64 chunkSize)
 
 ChunkedBuffer* newChunkedBuffer(StgWord64 chunkSize)
 {
-  ChunkedBuffer *buf = malloc(sizeof(ChunkedBuffer));
+  ChunkedBuffer *buf = stgMallocBytes(sizeof(ChunkedBuffer), "ChunkedBuffer");
   buf->head = newChunkedNode(NULL, chunkSize);
   buf->tailSize = 0;
   buf->chunkSize = chunkSize;
@@ -49,8 +50,8 @@ void freeChunkedNode(ChunkedNode *node)
   while (node != NULL) {
     curNode = node;
     node = curNode->next;
-    free(curNode->mem);
-    free(curNode);
+    stgFree(curNode->mem);
+    stgFree(curNode);
   }
 }
 
@@ -58,7 +59,7 @@ void freeChunkedBuffer(ChunkedBuffer *buf)
 {
   if (buf != NULL) {
     freeChunkedNode(buf->head);
-    free(buf);
+    stgFree(buf);
   }
 }
 
@@ -160,7 +161,7 @@ StgWord64 getEventLogChunk(StgInt8** ptr) {
   if (node != NULL) {
     *ptr = node->mem;
     size = eventlogBuffer->chunkSize;
-    free(node);
+    stgFree(node);
   }
 
   RELEASE_LOCK(&eventlogMutex);
@@ -223,6 +224,8 @@ void resizeEventLogChunkedBuffer(StgWord64 chunkSize)
       writeChunked(eventlogBuffer, node->mem, remain);
       node = node->next;
     }
+
+    freeChunkedBuffer(buf);
   }
 
   RELEASE_LOCK(&eventlogMutex);
