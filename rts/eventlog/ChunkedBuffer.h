@@ -37,7 +37,7 @@ void freeChunkedNode(ChunkedNode *node);
 void freeChunkedBuffer(ChunkedBuffer *buf);
 
 // Return current unfilled tail of chunks chain
-ChunkedNode* getTail(ChunkedBuffer *buf);
+ChunkedNode* getChunkedTail(ChunkedBuffer *buf);
 // Return current length of chunks chain
 StgWord64 getChunksCount(ChunkedBuffer *buf);
 // Return filled head, or return NULL

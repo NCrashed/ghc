@@ -62,7 +62,7 @@ void freeChunkedBuffer(ChunkedBuffer *buf)
   }
 }
 
-ChunkedNode* getTail(ChunkedBuffer *buf) {
+ChunkedNode* getChunkedTail(ChunkedBuffer *buf) {
   if (buf == NULL) {
     return NULL;
   }
@@ -101,7 +101,7 @@ StgWord64 getChunksCount(ChunkedBuffer *buf) {
 
 void writeChunked(ChunkedBuffer *buf, StgInt8 *data, StgWord64 size) 
 {
-  ChunkedNode* curTail = getTail(buf); 
+  ChunkedNode* curTail = getChunkedTail(buf); 
   if (curTail == NULL) {
     debugBelch("writeChunked: buffer isn't initalized!");
     return;
@@ -171,7 +171,7 @@ void initEventLogChunkedBuffer(StgWord64 chunkSize) {
 #ifdef THREADED_RTS
   if (!mutexInited) {
     initMutex(&eventlogMutex);
-    mutexInited = 1;
+    mutexInited = rtsTrue;
   }
 #endif
 
