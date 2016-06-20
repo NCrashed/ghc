@@ -1151,7 +1151,7 @@ void printAndClearEventBuf (EventsBuf *ebuf)
             event_log_callback(ebuf->begin, ebuf->pos - ebuf->begin);
         }
         if (RtsFlags.TraceFlags.in_memory) {
-            writeChunkedLog(ebuf->begin, ebuf->pos - ebuf->begin);
+            writeEventLogChunked(ebuf->begin, ebuf->pos - ebuf->begin);
         }
 
         resetEventsBuf(ebuf);

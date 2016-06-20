@@ -15,31 +15,47 @@
 
 #ifdef TRACING
 
+typedef struct _ChunkedNode {
+  StgInt8 *mem;
+  struct _ChunkedNode *next;
+} ChunkedNode;
+
 typedef struct _ChunkedBuffer {
-  StgInt8* mem;
-  struct _ChunkedBuffer* next;
-} ChunkedBuffer;
+  ChunkedNode *head;
+  StgWord64 tailSize;
+  StgWord64 chunkSize;
+} ChunkedBuffer; 
 
 // Allocate new chunk with current chunk size and link to previous chunk
-ChunkedBuffer* newChunkedBuffer(ChunkedBuffer* prev);
+ChunkedNode* newChunkedNode(ChunkedNode *prev, StgWord64 chunkSize);
+// Allocate new chunked buffer and allocate head with given chunkSize
+ChunkedBuffer* newChunkedBuffer(StgWord64 chunkSize);
+
 // Destroy the chunk, its buffer and all childs
-void freeChunkedBuffer(ChunkedBuffer* buf);
+void freeChunkedNode(ChunkedNode *node);
+// Destroy the chunk, its buffer and all childs
+void freeChunkedBuffer(ChunkedBuffer *buf);
 
 // Return current unfilled tail of chunks chain
-ChunkedBuffer* getTail(void);
+ChunkedNode* getTail(ChunkedBuffer *buf);
 // Return current length of chunks chain
-StgWord64 getChunksCount(void);
+StgWord64 getChunksCount(ChunkedBuffer *buf);
 // Return filled head, or return NULL
-ChunkedBuffer* popChunkedLog(void);
+ChunkedNode* popChunkedLog(ChunkedBuffer *buf);
+// Write data to the chunked buffer
+void writeChunked(ChunkedBuffer *buf, StgInt8 *data, StgWord64 size);
 
-// Write data to chunked buffer, protected by mutex
-void writeChunkedLog(StgInt8 *buf, StgWord64 size);
+/*
+ * Write data to eventlog chunked buffer, protected by mutex.
+ */
+void writeEventLogChunked(StgInt8 *buf, StgWord64 size);
+
 /*
  * Read data from chunked buffer, protected by mutex.
  * If returned size is not zero, parameter contains buffer
  * that must be destroyed by caller.
  */
-StgWord64 getEventLogChunk(StgInt8** ptr);
+StgWord64 getEventLogChunk(StgInt8 **ptr);
 
 /*
  * Initalize eventlog buffer with given chunk size.
@@ -50,7 +66,15 @@ void initEventLogChunkedBuffer(StgWord64 chunkSize);
  */
 void destroyEventLogChunkedBuffer(void);
 
-// TODO: void resizeEventLogChunkedBuffer(StgWord64 chunkSize);
+/*
+ * Resize chunks of inner buffer to the given size.
+ */
+void resizeEventLogChunkedBuffer(StgWord64 chunkSize);
+
+/*
+ * Return current size of chunk in eventlog memory buffer.
+ */
+StgWord64 getEventLogChunkedBufferSize(void);
 
 #endif /* TRACING */
 
