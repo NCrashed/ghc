@@ -123,6 +123,7 @@ typedef struct _EventType {
 EventType eventTypes[NUM_GHC_EVENT_TAGS];
 
 static void initEventsBuf(EventsBuf* eb, StgWord64 size, EventCapNo capno);
+static void resizeEventsBuf(EventsBuf* eb, StgWord64 size);
 static void writeEventLoggingHeader(EventsBuf* eb);
 static void resetEventsBuf(EventsBuf* eb);
 static void flushEventsBufs(void);
@@ -1168,6 +1169,51 @@ void initEventsBuf(EventsBuf* eb, StgWord64 size, EventCapNo capno)
     eb->size = size;
     eb->marker = NULL;
     eb->capno = capno;
+}
+
+void resizeEventsBuf(EventsBuf* eb, StgWord64 size)
+{
+    StgWord64 reminder;
+    StgInt8 *oldBegin;
+
+    reminder = eb->pos - eb->begin;
+    if (reminder >= size) {
+        printAndClearEventBuf(eb);
+    }
+
+    reminder = eb->pos - eb->begin;
+    if (reminder >= size) {
+        debugBelch("resizeEventsBuf: new size is too small = %" FMT_Word64 
+          " for reminder = %" FMT_Word64, size, reminder);
+        return;
+    }
+
+    oldBegin = eb->begin;
+    eb->begin = stgMallocBytes(size, "resizeEventsBuf");
+    memcpy(eb->begin, oldBegin, reminder);
+    stgFree(oldBegin);
+
+    eb->size = size;
+    eb->pos = eb->begin + reminder;
+}
+
+void resizeEventLog(StgWord64 size)
+{
+    ACQUIRE_LOCK(&eventBufMutex);
+    StgWord32 c;
+
+    // Reallocate chunked buffer if enabled
+    if (RtsFlags.TraceFlags.in_memory) {
+        resizeEventLogChunkedBuffer(size);
+    }
+
+    // Resize buffers for capabilities
+    for (c = 0; c < n_capabilities; ++c) {
+        resizeEventsBuf(&capEventBuf[c], size);
+    }
+    resizeEventsBuf(&eventBuf, size);
+
+    RELEASE_LOCK(&eventBufMutex);
 }
 
 void resetEventsBuf(EventsBuf* eb)

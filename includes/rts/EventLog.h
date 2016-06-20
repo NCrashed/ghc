@@ -80,6 +80,14 @@ void rts_setEventLogMemorySink(eventLogSink sink,
  */
 StgWord64 rts_getEventLogChunk(StgInt8** ptr);
 
+/*
+ * Reallocate inner buffers to match the new size. The size should be not
+ * too small to contain at least one event.
+ *
+ * If RTS started with '-lm' the chunks of memory buffer is also resized.
+ */
+void rts_resizeEventLog(StgWord64 size);
+
 #else /* !TRACING */
 
 void rts_setEventLogSink(FILE    *sink       STG_UNUSED, 
@@ -101,6 +109,9 @@ StgWord64 rts_getEventLogChunk(StgInt8** ptr STG_UNUSED)
 {
   return 0;
 }
+
+void rts_resizeEventLog(StgWord64 size STG_UNUSED) 
+{ /* nothing */ }
 
 #endif 
 
