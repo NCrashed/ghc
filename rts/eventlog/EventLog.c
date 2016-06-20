@@ -292,7 +292,7 @@ initEventLogging(void)
 
     // Init memory buffer before writing the header
     if (RtsFlags.TraceFlags.in_memory) {
-      initEventLogChunkedBuffer(currentEventLogSize);
+        initEventLogChunkedBuffer(currentEventLogSize);
     }
 
     writeEventLoggingHeader(&eventBuf);
@@ -1165,8 +1165,8 @@ void printAndClearEventBuf (EventsBuf *ebuf)
     }
 
     if (ebuf->size != currentEventLogSize) {
-      resetEventsBuf(ebuf);
-      resizeEventsBuf(ebuf, currentEventLogSize);
+        resetEventsBuf(ebuf);
+        resizeEventsBuf(ebuf, currentEventLogSize);
     }
 }
 
@@ -1285,52 +1285,52 @@ void rts_setEventLogSink(FILE *sink,
   ACQUIRE_LOCK(&eventBufMutex);
 
   if (closePrev) {
-    endEventLogging();
+      endEventLogging();
   } else {
-    flushEventsBufs(); // Don't write end data marker
+      flushEventsBufs(); // Don't write end data marker
   }
-  resetEventsBuf(&eventBuf); // we don't want the block marker
+    resetEventsBuf(&eventBuf); // we don't want the block marker
 
-  // Actually update the file pointer
-  event_log_file = sink;
+    // Actually update the file pointer
+    event_log_file = sink;
 
   if (emitHeader) {
-    writeEventLoggingHeader(&eventBuf); // Write header to empty eventBuf
-    /*
-     * Flush header and data begin marker to the new file, thus preparing the
-     * file to have events written to it.
-     */
-    printAndClearEventBuf(&eventBuf);
+      writeEventLoggingHeader(&eventBuf); // Write header to empty eventBuf
+      /*
+       * Flush header and data begin marker to the new file, thus preparing the
+       * file to have events written to it.
+       */
+      printAndClearEventBuf(&eventBuf);
   }
 
-  RELEASE_LOCK(&eventBufMutex);
+    RELEASE_LOCK(&eventBufMutex);
 }
 
 FILE* rts_getEventLogSink()
 { 
-  return event_log_file;
+    return event_log_file;
 }
 
 void rts_setEventLogMemorySink(eventLogSink sink,
                                StgBool closePrev,
                                StgBool emitHeader)
 {
-  ACQUIRE_LOCK(&eventBufMutex);
+    ACQUIRE_LOCK(&eventBufMutex);
 
-  if (closePrev) {
-    endEventLogging();
-    event_log_file = NULL;
-  }
+    if (closePrev) {
+        endEventLogging();
+        event_log_file = NULL;
+    }
 
-  event_log_callback = sink;
+    event_log_callback = sink;
 
-  if (emitHeader) {
-    resetEventsBuf(&eventBuf);
-    writeEventLoggingHeader(&eventBuf);
-    printAndClearEventBuf(&eventBuf);
-  }
+    if (emitHeader) {
+        resetEventsBuf(&eventBuf);
+        writeEventLoggingHeader(&eventBuf);
+        printAndClearEventBuf(&eventBuf);
+    }
 
-  RELEASE_LOCK(&eventBufMutex);
+    RELEASE_LOCK(&eventBufMutex);
 }
 
 StgWord64 rts_getEventLogChunk(StgInt8 **ptr)
