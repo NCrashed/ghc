@@ -287,6 +287,11 @@ initEventLogging(void)
 
     initEventsBuf(&eventBuf, EVENT_LOG_SIZE, (EventCapNo)(-1));
 
+    // Init memory buffer before writing the header
+    if (RtsFlags.TraceFlags.in_memory) {
+      initEventLogChunkedBuffer(EVENT_LOG_SIZE);
+    }
+
     writeEventLoggingHeader(&eventBuf);
 
     // Flush capEventBuf with header.
@@ -303,10 +308,6 @@ initEventLogging(void)
 #ifdef THREADED_RTS
     initMutex(&eventBufMutex);
 #endif
-
-    if (RtsFlags.TraceFlags.in_memory) {
-      initEventLogChunkedBuffer(EVENT_LOG_SIZE);
-    }
 }
 
 void 
