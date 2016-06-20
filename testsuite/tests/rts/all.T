@@ -69,7 +69,7 @@ test('T2783', [ omit_ways(['ghci']), exit_code(1) ], compile_and_run, [''])
 test('testwsdeque', [unless(in_tree_compiler(), skip),
                     req_smp, # needs atomic 'cas'
                     c_src, only_ways(['threaded1', 'threaded2'])],
-                    compile_and_run, ['-I../../../rts'])
+                    compile_and_run, [''])
 
 test('T3236', [c_src, only_ways(['normal','threaded1']), exit_code(1)], compile_and_run, [''])
 
@@ -266,7 +266,7 @@ test('T9078', [ omit_ways(threaded_ways) ], compile_and_run, ['-with-rtsopts="-D
 test('T10017', [ when(opsys('mingw32'), skip)
                , only_ways(threaded_ways), extra_run_opts('+RTS -N2 -RTS') ], compile_and_run, [''])
 
-test('T11108', normal, compile_and_run, [''])
+test('T11108', expect_broken_for(11108, ['ghci', 'hpc']), compile_and_run, [''])
 
 test('rdynamic', [ unless(opsys('linux') or opsys('mingw32'), skip)
                  # this needs runtime infrastructure to do in ghci:
@@ -275,9 +275,13 @@ test('rdynamic', [ unless(opsys('linux') or opsys('mingw32'), skip)
                  ],
      compile_and_run, ['-rdynamic -package ghc'])
 
-test('GcStaticPointers', [when(doing_ghci(), extra_hc_opts('-fobject-code'))],
+test('GcStaticPointers',
+     [when(doing_ghci(), extra_hc_opts('-fobject-code')),
+      expect_broken_for(12207, opt_ways)],
      compile_and_run, [''])
-test('ListStaticPointers', [when(doing_ghci(), extra_hc_opts('-fobject-code'))],
+test('ListStaticPointers',
+     [when(doing_ghci(), extra_hc_opts('-fobject-code')),
+      expect_broken_for(12207, opt_ways)],
      compile_and_run, [''])
 
 # 251 = RTS exit code for "out of memory"
@@ -350,3 +354,6 @@ test('T10296a', [extra_clean(['T10296a.o','T10296a_c.o','T10296a'])],
                 ['$MAKE -s --no-print-directory T10296a'])
 
 test('T10296b', [only_ways('threaded2')], compile_and_run, [''])
+
+test('numa001', [ extra_run_opts('8'), extra_ways(['debug_numa']) ]
+                , compile_and_run, [''])
