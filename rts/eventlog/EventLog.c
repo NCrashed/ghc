@@ -32,7 +32,6 @@
 static pid_t event_log_pid = -1;
 
 static char *event_log_filename = NULL;
-static eventLogSink event_log_callback = NULL;
 
 // File for logging events
 FILE *event_log_file = NULL;
@@ -1151,9 +1150,6 @@ void printAndClearEventBuf (EventsBuf *ebuf)
                 begin += written;
             }
         }
-        if (event_log_callback != NULL) {
-            event_log_callback(ebuf->begin, ebuf->pos - ebuf->begin);
-        }
         if (RtsFlags.TraceFlags.in_memory) {
             writeEventLogChunked(ebuf->begin, ebuf->pos - ebuf->begin);
         }
@@ -1309,28 +1305,6 @@ void rts_setEventLogSink(FILE *sink,
 FILE* rts_getEventLogSink()
 { 
     return event_log_file;
-}
-
-void rts_setEventLogMemorySink(eventLogSink sink,
-                               StgBool closePrev,
-                               StgBool emitHeader)
-{
-    ACQUIRE_LOCK(&eventBufMutex);
-
-    if (closePrev) {
-        endEventLogging();
-        event_log_file = NULL;
-    }
-
-    event_log_callback = sink;
-
-    if (emitHeader) {
-        resetEventsBuf(&eventBuf);
-        writeEventLoggingHeader(&eventBuf);
-        printAndClearEventBuf(&eventBuf);
-    }
-
-    RELEASE_LOCK(&eventBufMutex);
 }
 
 StgWord64 rts_getEventLogChunk(StgInt8 **ptr)
