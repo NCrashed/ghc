@@ -88,6 +88,11 @@ StgWord64 rts_getEventLogChunk(StgInt8** ptr);
  */
 void rts_resizeEventLog(StgWord64 size);
 
+/*
+ * Return current size of eventlog buffers.
+ */
+StgWord64 rts_getEventLogBuffersSize(void);
+
 #else /* !TRACING */
 
 void rts_setEventLogSink(FILE    *sink       STG_UNUSED, 
@@ -112,6 +117,11 @@ StgWord64 rts_getEventLogChunk(StgInt8** ptr STG_UNUSED)
 
 void rts_resizeEventLog(StgWord64 size STG_UNUSED) 
 { /* nothing */ }
+
+StgWord64 rts_getEventLogBuffersSize(void)
+{
+  return 0;
+}
 
 #endif 
 

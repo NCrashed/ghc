@@ -47,7 +47,10 @@ module Debug.Trace (
         -- $eventlog_options
         setEventLogHandle,
         setEventLogCFile,
-        getEventLogCFile
+        getEventLogCFile,
+        setEventLogBufferSize,
+        getEventLogBufferSize,
+        getEventLogChunk
   ) where
 
 import System.IO 
@@ -55,8 +58,10 @@ import System.IO.Unsafe
 import System.IO.Error
 import System.Posix.Types (Fd(..))
 
+import Foreign (peek)
 import Foreign.C.String
 import Foreign.C.Types
+import Foreign.Marshal.Alloc
 import Foreign.Marshal.Utils (fromBool)
 import GHC.Base
 import qualified GHC.Foreign
@@ -66,6 +71,7 @@ import GHC.IO.Handle.Types (Handle(..), Handle__(..), HandleType(..))
 import GHC.IO.Exception (IOErrorType(..))
 import qualified GHC.IO.FD as FD
 import GHC.Ptr
+import GHC.Real (fromIntegral)
 import GHC.Show
 import GHC.Stack
 import Data.List
@@ -394,3 +400,57 @@ setEventLogCFile pf closePrev emitHeader = rts_setEventLogSink pf
 -- @since 4.10.0.0
 getEventLogCFile :: IO (Ptr CFile)
 getEventLogCFile = rts_getEventLogSink
+
+foreign import ccall unsafe "rts/EventLog.h rts_resizeEventLog" 
+  rts_resizeEventLog :: CSize -> IO ()
+
+foreign import ccall unsafe "rts/EventLog.h rts_getEventLogBuffersSize" 
+  rts_getEventLogBuffersSize :: IO CSize
+
+-- | Setting size of internal eventlog buffers. The size should be not
+-- too small to contain at least one event.
+--
+-- If RTS started with '-lm' the chunks of memory buffer is also resized.
+--
+-- The larger the buffers the lesser overhead from event logging, but 
+-- larger delays between data dumps.
+--
+-- See also: 'getEventLogChunk', 'getEventLogBufferSize'
+setEventLogBufferSize :: Word -> IO ()
+setEventLogBufferSize size = rts_resizeEventLog (fromIntegral size)
+
+-- | Getting size of internal eventlog buffers.
+--
+-- See also: 'setEventLogBufferSize', 'getEventLogChunk'
+getEventLogBufferSize :: IO Word
+getEventLogBufferSize = fmap fromIntegral rts_getEventLogBuffersSize
+
+foreign import ccall unsafe "rts/EventLog.h rts_getEventLogChunk" 
+  rts_getEventLogChunk :: Ptr (Ptr CChar) -> IO CSize
+
+-- | Get next portion of the eventlog data.
+--
+-- If RTS started with '-lm' flag then eventlog is stored in memory buffer.
+-- 
+-- The function allows to pop chunks out of the buffer. Return value of Nothing 
+-- means that there is no any filled chunk of data.
+--
+-- If the function returns nonzero value the parameter contains full chunk 
+-- of eventlog data with size of the returned value. Caller must free the
+-- buffer with 'free' from 'Foreign.Marshal.Alloc', the buffer isn't referenced 
+-- anywhere anymore.
+--
+-- If nobody calls the function with '-lm' flag on then the memory is kinda
+-- to be exhausted.
+--
+-- If '-lm' flag is off, the function returns always 'Nothing'.
+--
+-- See also: 'setEventLogBufferSize'
+getEventLogChunk :: IO (Maybe CStringLen)
+getEventLogChunk = alloca $ \ptrBuf -> do 
+  size <- rts_getEventLogChunk ptrBuf
+  if size == 0 
+    then return Nothing 
+    else do
+      buf <- peek ptrBuf
+      return $ Just (buf, fromIntegral size)

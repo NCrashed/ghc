@@ -1341,4 +1341,23 @@ void rts_setEventLogMemorySink(eventLogSink sink,
   RELEASE_LOCK(&eventBufMutex);
 }
 
+StgWord64 rts_getEventLogChunk(StgInt8 **ptr)
+{
+    return getEventLogChunk(ptr);
+}
+
+void rts_resizeEventLog(StgWord64 size)
+{
+    resizeEventLog(size);
+}
+
+StgWord64 rts_getEventLogBuffersSize(void)
+{
+    ACQUIRE_LOCK(&eventBufMutex);
+
+    return eventBuf.size;
+
+    RELEASE_LOCK(&eventBufMutex);
+}
+
 #endif /* TRACING */
