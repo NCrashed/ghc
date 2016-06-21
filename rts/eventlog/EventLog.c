@@ -1150,7 +1150,7 @@ void printAndClearEventBuf (EventsBuf *ebuf)
                 begin += written;
             }
         }
-        if (RtsFlags.TraceFlags.in_memory) {
+        if (RtsFlags.TraceFlags.in_memory && ebuf->begin < ebuf->pos) {
             writeEventLogChunked(ebuf->begin, ebuf->pos - ebuf->begin);
         }
 
@@ -1278,26 +1278,28 @@ void rts_setEventLogSink(FILE *sink,
                          StgBool closePrev,
                          StgBool emitHeader)
 {
-  ACQUIRE_LOCK(&eventBufMutex);
+    FILE *oldFile;
 
-  if (closePrev) {
-      endEventLogging();
-  } else {
-      flushEventsBufs(); // Don't write end data marker
-  }
+    ACQUIRE_LOCK(&eventBufMutex);
+
+    printAndClearEventBuf(&eventBuf);
     resetEventsBuf(&eventBuf); // we don't want the block marker
 
     // Actually update the file pointer
+    oldFile = event_log_file;
     event_log_file = sink;
 
-  if (emitHeader) {
-      writeEventLoggingHeader(&eventBuf); // Write header to empty eventBuf
-      /*
-       * Flush header and data begin marker to the new file, thus preparing the
-       * file to have events written to it.
-       */
-      printAndClearEventBuf(&eventBuf);
-  }
+    if (emitHeader) {
+        writeEventLoggingHeader(&eventBuf); // Write header to empty eventBuf
+        /*
+         * Flush header and data begin marker to the new file, thus preparing the
+         * file to have events written to it.
+         */
+        printAndClearEventBuf(&eventBuf);
+    }
+    if (closePrev && oldFile != NULL) {
+        fclose(oldFile);
+    }
 
     RELEASE_LOCK(&eventBufMutex);
 }
