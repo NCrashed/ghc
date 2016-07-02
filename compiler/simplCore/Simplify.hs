@@ -2320,7 +2320,7 @@ knownCon env scrut dc dc_ty_args dc_args bndr bs rhs cont
 -------------------
 missingAlt :: SimplEnv -> Id -> [InAlt] -> SimplCont -> SimplM (SimplEnv, OutExpr)
                 -- This isn't strictly an error, although it is unusual.
-                -- It's possible that the simplifer might "see" that
+                -- It's possible that the simplifier might "see" that
                 -- an inner case has no accessible alternatives before
                 -- it "sees" that the entire branch of an outer case is
                 -- inaccessible.  So we simply put an error case here instead.
@@ -2645,7 +2645,7 @@ Rather than do this we simply agree to re-simplify the original (small) thing la
 
 Note [Funky mkLamTypes]
 ~~~~~~~~~~~~~~~~~~~~~~
-Notice the funky mkLamTypes.  If the contructor has existentials
+Notice the funky mkLamTypes.  If the constructor has existentials
 it's possible that the join point will be abstracted over
 type variables as well as term variables.
  Example:  Suppose we have

@@ -858,9 +858,21 @@ then the expression will only require ``Applicative``. Otherwise, the expression
 will require ``Monad``. The block may return a pure expression ``E`` depending
 upon the results ``p1...pn`` with either ``return`` or ``pure``.
 
-Note: the final statement really must be of the form ``return E`` or
-``pure E``, otherwise you get a ``Monad`` constraint.  Using ``$`` as
-in ``return $ E`` or ``pure $ E`` is also acceptable.
+Note: the final statement must match one of these patterns exactly:
+
+- ``return E``
+- ``return $ E``
+- ``pure E``
+- ``pure $ E``
+
+otherwise GHC cannot recognise it as a ``return`` statement, and the
+transformation to use ``<$>`` that we saw above does not apply.  In
+particular, slight variations such as ``return . Just $ x`` or ``let x
+= e in return x`` would not be recognised.
+
+If the final statement is not of one of these forms, GHC falls back to
+standard ``do`` desugaring, and the expression will require a
+``Monad`` constraint.
 
 When the statements of a ``do`` expression have dependencies between
 them, and ``ApplicativeDo`` cannot infer an ``Applicative`` type, it
@@ -3041,8 +3053,10 @@ More details:
       unqualified).
 
    -  In the case of expressions (but not patterns), the variable ``f``
-      is in scope unqualified, apart from the binding of the record
-      selector itself.
+      is in scope unqualified, and is not imported or bound at top level.
+      For example, ``f`` can be bound by an enclosing pattern match or
+      let/where-binding.  (The motivation here is that it should be
+      easy for the reader to figure out what the "``..``" expands to.)
 
    These rules restrict record wildcards to the situations in which the
    user could have written the expanded version. For example ::
@@ -4301,13 +4315,18 @@ Note also the following points
 -  You may specify an explicit *pattern signature*, as we did for
    ``ExNumPat`` above, to specify the type of a pattern, just as you can
    for a function. As usual, the type signature can be less polymorphic
-   than the inferred type. For example
-
-   ::
+   than the inferred type. For example ::
 
          -- Inferred type would be 'a -> [a]'
          pattern SinglePair :: (a, a) -> [(a, a)]
          pattern SinglePair x = [x]
+
+   Just like signatures on value-level bindings, pattern synonym signatures can
+   apply to more than one pattern. For instance, ::
+
+         pattern Left', Right' :: a -> Either a a
+         pattern Left' x  = Left x
+         pattern Right' x = Right x
 
 -  The GHCi :ghci-cmd:`:info` command shows pattern types in this format.
 
@@ -11362,7 +11381,7 @@ obfuscates matters, so we do not do so here.)
 
 The translation is carefully crafted to make bang patterns meaningful
 for reursive and polymorphic bindings as well as straightforward
-non-recurisve bindings.
+non-recursive bindings.
 
 Here are some examples of how this translation works. The first
 expression of each sequence is Haskell source; the subsequent ones are

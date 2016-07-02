@@ -793,8 +793,7 @@ getInfo allInfo name
                        -- The one we looked for in the first place!
                | pretendNameIsInScope n = True
                | isBuiltInSyntax n      = True
-               | isExternalName n       = any ((== n) . gre_name)
-                                              (lookupGRE_Name rdr_env n)
+               | isExternalName n       = isJust (lookupGRE_Name rdr_env n)
                | otherwise              = True
 
 -- | Returns all names in scope in the current interactive context
@@ -865,10 +864,10 @@ parseThing parser dflags stmt = do
 -- Getting the type of an expression
 
 -- | Get the type of an expression
--- Returns its most general type
-exprType :: GhcMonad m => String -> m Type
-exprType expr = withSession $ \hsc_env -> do
-   ty <- liftIO $ hscTcExpr hsc_env expr
+-- Returns the type as described by 'TcRnExprMode'
+exprType :: GhcMonad m => TcRnExprMode -> String -> m Type
+exprType mode expr = withSession $ \hsc_env -> do
+   ty <- liftIO $ hscTcExpr hsc_env mode expr
    return $ tidyType emptyTidyEnv ty
 
 -- -----------------------------------------------------------------------------

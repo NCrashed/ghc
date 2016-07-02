@@ -418,9 +418,9 @@ data DataCon
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 For the TyVarBinders in a DataCon and PatSyn:
 
- * Each Visibilty flag is Invisible or Specified.
-   None are Visible. (A DataCon is a term-level function; see
-   Note [No Visible TyBinder in terms] in TyCoRep.)
+ * Each argument flag is Inferred or Specified.
+   None are Required. (A DataCon is a term-level function; see
+   Note [No Required TyBinder in terms] in TyCoRep.)
 
 Why do we need the TyVarBinders, rather than just the TyVars?  So that
 we can construct the right type for the DataCon with its foralls
@@ -598,7 +598,7 @@ Terminology:
 
 Note [Data con representation]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The dcRepType field contains the type of the representation of a contructor
+The dcRepType field contains the type of the representation of a constructor
 This may differ from the type of the constructor *Id* (built
 by MkId.mkDataConId) for two reasons:
         a) the constructor Id may be overloaded, but the dictionary isn't stored
@@ -626,13 +626,6 @@ Actually, the unboxed part isn't implemented yet!
 instance Eq DataCon where
     a == b = getUnique a == getUnique b
     a /= b = getUnique a /= getUnique b
-
-instance Ord DataCon where
-    a <= b = getUnique a <= getUnique b
-    a <  b = getUnique a <  getUnique b
-    a >= b = getUnique a >= getUnique b
-    a >  b = getUnique a > getUnique b
-    compare a b = getUnique a `compare` getUnique b
 
 instance Uniquable DataCon where
     getUnique = dcUnique
@@ -741,7 +734,7 @@ mkDataCon :: Name
                             -- if it is a record, otherwise empty
           -> [TyVarBinder]  -- ^ Universals. See Note [TyVarBinders in DataCons]
           -> [TyVarBinder]  -- ^ Existentials.
-                            -- (These last two must be Named and Invisible/Specified)
+                            -- (These last two must be Named and Inferred/Specified)
           -> [EqSpec]       -- ^ GADT equalities
           -> ThetaType      -- ^ Theta-type occuring before the arguments proper
           -> [Type]         -- ^ Original argument types
@@ -1290,14 +1283,13 @@ buildAlgTyCon :: Name
               -> Maybe CType
               -> ThetaType             -- ^ Stupid theta
               -> AlgTyConRhs
-              -> RecFlag
               -> Bool                  -- ^ True <=> was declared in GADT syntax
               -> AlgTyConFlav
               -> TyCon
 
 buildAlgTyCon tc_name ktvs roles cType stupid_theta rhs
-              is_rec gadt_syn parent
+              gadt_syn parent
   = mkAlgTyCon tc_name binders liftedTypeKind roles cType stupid_theta
-               rhs parent is_rec gadt_syn
+               rhs parent gadt_syn
   where
     binders = mkTyConBindersPreferAnon ktvs liftedTypeKind

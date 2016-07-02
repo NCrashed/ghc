@@ -535,10 +535,8 @@ cmmNativeGen dflags this_mod modLoc ncgImpl us fileIds dbgMap cmm count
 
         -- allocate registers
         (alloced, usAlloc, ppr_raStatsColor, ppr_raStatsLinear) <-
-         if False
-           -- Disabled, see #7679, #8657
-           --  ( gopt Opt_RegsGraph dflags
-           --  || gopt Opt_RegsIterative dflags)
+         if ( gopt Opt_RegsGraph dflags
+           || gopt Opt_RegsIterative dflags )
           then do
                 -- the regs usable for allocation
                 let (alloc_regs :: UniqFM (UniqSet RealReg))
@@ -764,7 +762,7 @@ sccBlocks
                 , BlockId
                 , [BlockId])]
 
-sccBlocks blocks = stronglyConnCompFromEdgedVerticesR (map mkNode blocks)
+sccBlocks blocks = stronglyConnCompFromEdgedVerticesUniqR (map mkNode blocks)
 
 -- we're only interested in the last instruction of
 -- the block, and only if it has a single destination.

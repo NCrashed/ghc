@@ -45,12 +45,16 @@ module CoreUtils (
 
         -- * Working with ticks
         stripTicksTop, stripTicksTopE, stripTicksTopT,
-        stripTicksE, stripTicksT
+        stripTicksE, stripTicksT,
+
+        -- * StaticPtr
+        collectStaticPtrSatArgs
     ) where
 
 #include "HsVersions.h"
 
 import CoreSyn
+import PrelNames ( staticPtrDataConName )
 import PprCore
 import CoreFVs( exprFreeVars )
 import Var
@@ -714,7 +718,7 @@ missed the first one.)
 combineIdenticalAlts :: [AltCon]    -- Constructors that cannot match DEFAULT
                      -> [CoreAlt]
                      -> (Bool,      -- True <=> something happened
-                         [AltCon],  -- New contructors that cannot match DEFAULT
+                         [AltCon],  -- New constructors that cannot match DEFAULT
                          [CoreAlt]) -- New alternatives
 -- See Note [Combine identical alternatives]
 -- True <=> we did some combining, result is a single DEFAULT alternative
@@ -2118,7 +2122,7 @@ rhsIsStatic :: Platform
 -- This is a bit like CoreUtils.exprIsHNF, with the following differences:
 --    a) scc "foo" (\x -> ...) is updatable (so we catch the right SCC)
 --
---    b) (C x xs), where C is a contructor is updatable if the application is
+--    b) (C x xs), where C is a constructor is updatable if the application is
 --         dynamic
 --
 --    c) don't look through unfolding of f in (f x).
@@ -2203,3 +2207,25 @@ isEmptyTy ty
     = True
     | otherwise
     = False
+
+{-
+*****************************************************
+*
+* StaticPtr
+*
+*****************************************************
+-}
+
+-- | @collectStaticPtrSatArgs e@ yields @Just (s, args)@ when @e = s args@
+-- and @s = StaticPtr@ and the application of @StaticPtr@ is saturated.
+--
+-- Yields @Nothing@ otherwise.
+collectStaticPtrSatArgs :: Expr b -> Maybe (Expr b, [Arg b])
+collectStaticPtrSatArgs e
+    | (fun@(Var b), args, _) <- collectArgsTicks (const True) e
+    , Just con <- isDataConId_maybe b
+    , dataConName con == staticPtrDataConName
+    , length args == 5
+    = Just (fun, args)
+collectStaticPtrSatArgs _
+    = Nothing

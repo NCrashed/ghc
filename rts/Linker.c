@@ -327,11 +327,16 @@ static void *lookupSymbolInDLLs ( unsigned char *lbl );
 #ifndef x86_64_HOST_ARCH
  static void zapTrailingAtSign   ( unsigned char *sym );
 #endif
+
+#if defined(x86_64_HOST_ARCH)
+#define USED_IF_x86_64_HOST_ARCH    /* Nothing */
+#else
+#define USED_IF_x86_64_HOST_ARCH    STG_UNUSED
+#endif
+
 static char *allocateImageAndTrampolines (
    pathchar* arch_name, char* member_name,
-#if defined(x86_64_HOST_ARCH)
    FILE* f,
-#endif
    int size,
    int isThin);
 #if defined(x86_64_HOST_ARCH)
@@ -1460,6 +1465,27 @@ void ghci_enquire(SymbolAddr* addr)
       }
    }
 }
+
+void ghci_find(SymbolAddr *addr);
+void ghci_find(SymbolAddr *addr)
+{
+    ObjectCode *oc;
+    uint32_t i;
+
+    for (oc = objects; oc != NULL; oc = oc->next) {
+        for (i = 0; i < (uint32_t)oc->n_sections; i++) {
+            Section *section = &oc->sections[i];
+            if (addr > section->start &&
+                (StgWord)addr < (StgWord)section->start+section->size) {
+                debugBelch("%p is in %" PATH_FMT, addr,
+                           oc->archiveMemberName ?
+                             oc->archiveMemberName : oc->fileName);
+                debugBelch(", section %d, offset %lx\n", i,
+                           (StgWord)addr - (StgWord)section->start);
+            }
+        }
+    }
+}
 #endif
 
 #if RTS_LINKER_USE_MMAP
@@ -1698,9 +1724,7 @@ void freeObjectCode (ObjectCode *oc)
 * Sets the initial status of a fresh ObjectCode
 */
 static void setOcInitialStatus(ObjectCode* oc) {
-    if (oc->isImportLib == HS_BOOL_TRUE) {
-        oc->status = OBJECT_DONT_RESOLVE;
-    } else if (oc->archiveMemberName == NULL) {
+    if (oc->archiveMemberName == NULL) {
         oc->status = OBJECT_NEEDED;
     } else {
         oc->status = OBJECT_LOADED;
@@ -2121,11 +2145,8 @@ static HsInt loadArchive_ (pathchar *path)
 #if defined(mingw32_HOST_OS)
             // TODO: We would like to use allocateExec here, but allocateExec
             //       cannot currently allocate blocks large enough.
-            image = allocateImageAndTrampolines(path, fileName,
-#if defined(x86_64_HOST_ARCH)
-               f,
-#endif
-               memberSize, isThin);
+            image = allocateImageAndTrampolines(path, fileName, f, memberSize,
+                                                isThin);
 #elif defined(darwin_HOST_OS)
             if (RTS_LINKER_USE_MMAP)
                 image = mmapForLinker(memberSize, MAP_ANONYMOUS, -1, 0);
@@ -2354,11 +2375,8 @@ preloadObjectFile (pathchar *path)
 
         // TODO: We would like to use allocateExec here, but allocateExec
         //       cannot currently allocate blocks large enough.
-    image = allocateImageAndTrampolines(path, "itself",
-#if defined(x86_64_HOST_ARCH)
-       f,
-#endif
-       fileSize, HS_BOOL_FALSE);
+    image = allocateImageAndTrampolines(path, "itself", f, fileSize,
+                                        HS_BOOL_FALSE);
     if (image == NULL) {
         fclose(f);
         return NULL;
@@ -2539,6 +2557,10 @@ int ocTryLoad (ObjectCode* oc) {
             return 0;
         }
     }
+
+    IF_DEBUG(linker, debugBelch("Resolving %" PATH_FMT "\n",
+                                oc->archiveMemberName ?
+                                oc->archiveMemberName : oc->fileName));
 
 #           if defined(OBJFORMAT_ELF)
         r = ocResolve_ELF ( oc );
@@ -3074,11 +3096,9 @@ static int verifyCOFFHeader ( COFF_header *hdr, pathchar *filename);
 static char *
 allocateImageAndTrampolines (
    pathchar* arch_name, char* member_name,
-#if defined(x86_64_HOST_ARCH)
-   FILE* f,
-#endif
+   FILE* f USED_IF_x86_64_HOST_ARCH,
    int size,
-   int isThin)
+   int isThin USED_IF_x86_64_HOST_ARCH)
 {
    char* image;
 #if defined(x86_64_HOST_ARCH)

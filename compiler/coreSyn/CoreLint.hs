@@ -552,10 +552,7 @@ lintRhs :: CoreExpr -> LintM OutType
 -- but produce errors otherwise.
 lintRhs rhs
     | (binders0, rhs') <- collectTyBinders rhs
-    , (fun@(Var b), args) <- collectArgs rhs'
-    , Just con <- isDataConId_maybe b
-    , dataConName con == staticPtrDataConName
-    , length args == 5
+    , Just (fun, args) <- collectStaticPtrSatArgs rhs'
     = flip fix binders0 $ \loopBinders binders -> case binders of
         -- imitate @lintCoreExpr (Lam ...)@
         var : vars -> addLoc (LambdaBodyOf var) $
@@ -891,7 +888,7 @@ checkCaseAlts :: CoreExpr -> OutType -> [CoreAlt] -> LintM ()
 -- b2) Check that the others are in increasing order
 -- c) Check that there's a default for infinite types
 -- NB: Algebraic cases are not necessarily exhaustive, because
---     the simplifer correctly eliminates case that can't
+--     the simplifier correctly eliminates case that can't
 --     possibly match.
 
 checkCaseAlts e ty alts =

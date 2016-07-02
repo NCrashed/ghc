@@ -6,6 +6,7 @@ module T8761 where
 
 import Control.Monad
 import Language.Haskell.TH
+import System.IO
 
 data Ex         where MkEx       :: forall a. a -> Ex
 data ExProv     where MkExProv   :: forall a. (Show a) => a -> ExProv
@@ -33,7 +34,7 @@ do
 
   pats <- sequence [prefixPat, infixPat, recordPat]
   -- pretty print the pattern synonyms:
-  mapM_ (runIO . putStrLn . pprint) pats
+  mapM_ (runIO . hPutStrLn stderr . pprint) pats
   -- splice in the pattern synonyms
   return pats
 
@@ -107,5 +108,10 @@ getY1' = y1 ((1, 2), [3]) -- should yield 3
 do
   infos <- mapM reify [ 'P, 'Pe, 'Pu, 'Pue, 'Pur, 'Purp
                       , 'Pure, 'Purep, 'Pep, 'Pup, 'Puep ]
-  mapM_ (runIO . putStrLn . pprint) infos
+  mapM_ (runIO . hPutStrLn stderr . pprint) infos
+    -- NB. use stderr rather than stdout, because GHC does not
+    -- guarantee to flush stdout after TH code.  In particular when
+    -- the output is going to a file, and we're using GHC with the
+    -- runtime linker or with -fexternal-interpreter, stdout will not
+    -- get flushed.
   [d| theAnswerIs = 42 |]

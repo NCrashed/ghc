@@ -894,7 +894,7 @@ CPRResult:         NoCPR
             RetProd    RetSum ConTag
 
 
-Product contructors return (Dunno (RetProd rs))
+Product constructors return (Dunno (RetProd rs))
 In a fixpoint iteration, start from Diverges
 We have lubs, but not glbs; but that is ok.
 -}
@@ -1306,8 +1306,7 @@ seqDmdType (DmdType env ds res) =
   seqDmdEnv env `seq` seqDemandList ds `seq` seqDmdResult res `seq` ()
 
 seqDmdEnv :: DmdEnv -> ()
-seqDmdEnv env = seqDemandList (varEnvElts env)
-
+seqDmdEnv env = seqEltsUFM seqDemandList env
 
 splitDmdTy :: DmdType -> (Demand, DmdType)
 -- Split off one function argument

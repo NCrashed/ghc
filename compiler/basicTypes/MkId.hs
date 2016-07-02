@@ -393,7 +393,7 @@ mkDataConWorkId wkr_name data_con
         -- the simplifier thinks that y is "sure to be evaluated" (because
         --  $wMkT is strict) and drops the case.  No, $wMkT is not strict.
         --
-        -- When the simplifer sees a pattern
+        -- When the simplifier sees a pattern
         --      case e of MkT x -> ...
         -- it uses the dataConRepStrictness of MkT to mark x as evaluated;
         -- but that's fine... dataConRepStrictness comes from the data con
@@ -497,7 +497,7 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
                  -- The Cpr info can be important inside INLINE rhss, where the
                  -- wrapper constructor isn't inlined.
                  -- And the argument strictness can be important too; we
-                 -- may not inline a contructor when it is partially applied.
+                 -- may not inline a constructor when it is partially applied.
                  -- For example:
                  --      data W = C !Int !Int !Int
                  --      ...(let w = C x in ...(w p q)...)...

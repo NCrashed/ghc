@@ -54,7 +54,7 @@ module UniqFM (
         intersectUFM_C,
         disjointUFM,
         nonDetFoldUFM, foldUFM, nonDetFoldUFM_Directly,
-        anyUFM, allUFM,
+        anyUFM, allUFM, seqEltsUFM,
         mapUFM, mapUFM_Directly,
         elemUFM, elemUFM_Directly,
         filterUFM, filterUFM_Directly, partitionUFM,
@@ -64,8 +64,8 @@ module UniqFM (
         lookupWithDefaultUFM, lookupWithDefaultUFM_Directly,
         nonDetEltsUFM, eltsUFM, nonDetKeysUFM,
         ufmToSet_Directly,
-        nonDetUFMToList, ufmToList, ufmToIntMap,
-        pprUniqFM, pprUFM, pluralUFM
+        nonDetUFMToList, ufmToIntMap,
+        pprUniqFM, pprUFM, pprUFMWithKeys, pluralUFM
     ) where
 
 import Unique           ( Uniquable(..), Unique, getKey )
@@ -184,7 +184,6 @@ lookupWithDefaultUFM_Directly
                 :: UniqFM elt -> elt -> Unique -> elt
 eltsUFM         :: UniqFM elt -> [elt]
 ufmToSet_Directly :: UniqFM elt -> S.IntSet
-ufmToList       :: UniqFM elt -> [(Unique, elt)]
 
 {-
 ************************************************************************
@@ -286,13 +285,18 @@ lookupWithDefaultUFM (UFM m) v k = M.findWithDefault v (getKey $ getUnique k) m
 lookupWithDefaultUFM_Directly (UFM m) v u = M.findWithDefault v (getKey u) m
 eltsUFM (UFM m) = M.elems m
 ufmToSet_Directly (UFM m) = M.keysSet m
-ufmToList (UFM m) = map (\(k, v) -> (getUnique k, v)) $ M.toList m
 
 anyUFM :: (elt -> Bool) -> UniqFM elt -> Bool
 anyUFM p (UFM m) = M.fold ((||) . p) False m
 
 allUFM :: (elt -> Bool) -> UniqFM elt -> Bool
 allUFM p (UFM m) = M.fold ((&&) . p) True m
+
+seqEltsUFM :: ([elt] -> ()) -> UniqFM elt -> ()
+seqEltsUFM seqList = seqList . nonDetEltsUFM
+  -- It's OK to use nonDetEltsUFM here because the type guarantees that
+  -- the only interesting thing this function can do is to force the
+  -- elements.
 
 -- See Note [Deterministic UniqFM] to learn about nondeterminism.
 -- If you use this please provide a justification why it doesn't introduce
@@ -356,6 +360,18 @@ pprUFM :: UniqFM a      -- ^ The things to be pretty printed
        -> SDoc          -- ^ 'SDoc' where the things have been pretty
                         -- printed
 pprUFM ufm pp = pp (nonDetEltsUFM ufm)
+
+-- | Pretty-print a non-deterministic set.
+-- The order of variables is non-deterministic and for pretty-printing that
+-- shouldn't be a problem.
+-- Having this function helps contain the non-determinism created with
+-- nonDetUFMToList.
+pprUFMWithKeys
+       :: UniqFM a                -- ^ The things to be pretty printed
+       -> ([(Unique, a)] -> SDoc) -- ^ The pretty printing function to use on the elements
+       -> SDoc                    -- ^ 'SDoc' where the things have been pretty
+                                  -- printed
+pprUFMWithKeys ufm pp = pp (nonDetUFMToList ufm)
 
 -- | Determines the pluralisation suffix appropriate for the length of a set
 -- in the same way that plural from Outputable does for lists.

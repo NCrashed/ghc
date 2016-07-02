@@ -90,7 +90,7 @@ especially on value bindings.  Here's an overview.
   The instantiation does the obvious thing for complete signatures,
   but for /partial/ signatures it starts from the HsSyn, so it
   has to kind-check it etc: tcHsPartialSigType.  It's convenient
-  to do this at the same time as instantiation, becuase we can
+  to do this at the same time as instantiation, because we can
   make the wildcards into unification variables right away, raather
   than somehow quantifying over them.  And the "TcLevel" of those
   unification variables is correct because we are in tcMonoBinds.
@@ -196,10 +196,11 @@ tcTySig (L loc (TypeSig names sig_ty))
                           | L _ name <- names ]
        ; return (map TcIdSig sigs) }
 
-tcTySig (L loc (PatSynSig (L _ name) sig_ty))
+tcTySig (L loc (PatSynSig names sig_ty))
   = setSrcSpan loc $
-    do { tpsi <- tcPatSynSig name sig_ty
-       ; return [TcPatSynSig tpsi] }
+    do { tpsigs <- sequence [ tcPatSynSig name sig_ty
+                            | L _ name <- names ]
+       ; return (map TcPatSynSig tpsigs) }
 
 tcTySig _ = return []
 
@@ -393,7 +394,7 @@ tcPatSynSig name sig_ty
               , text "prov" <+> ppr prov
               , text "body_ty" <+> ppr body_ty ]
        ; return (TPSI { patsig_name = name
-                      , patsig_implicit_bndrs = mkTyVarBinders Invisible kvs ++
+                      , patsig_implicit_bndrs = mkTyVarBinders Inferred kvs ++
                                                 mkTyVarBinders Specified implicit_tvs
                       , patsig_univ_bndrs     = univ_tvs
                       , patsig_req            = req

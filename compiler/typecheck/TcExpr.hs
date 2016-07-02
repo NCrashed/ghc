@@ -29,7 +29,7 @@ import BasicTypes
 import Inst
 import TcBinds          ( chooseInferredQuantifiers, tcLocalBinds )
 import TcSigs           ( tcUserTypeSig, tcInstSig )
-import TcSimplify       ( simplifyInfer )
+import TcSimplify       ( simplifyInfer, InferMode(..) )
 import FamInst          ( tcGetFamInstEnvs, tcLookupDataFamInst )
 import FamInstEnv       ( FamInstEnvs )
 import RnEnv            ( addUsedGRE, addNameClashErrRn
@@ -1191,7 +1191,7 @@ tcArgs fun orig_fun_ty fun_orig orig_args herald
            ; case tcSplitForAllTy_maybe upsilon_ty of
                Just (tvb, inner_ty) ->
                  do { let tv   = binderVar tvb
-                          vis  = binderVisibility tvb
+                          vis  = binderArgFlag tvb
                           kind = tyVarKind tv
                     ; MASSERT2( vis == Specified
                         , (vcat [ ppr fun_ty, ppr upsilon_ty, ppr tvb
@@ -1472,16 +1472,19 @@ tcExprSig expr sig@(PartialSig { psig_name = name, sig_loc = loc })
                    ; return (expr', sig_inst) }
        -- See Note [Partial expression signatures]
        ; let tau = sig_inst_tau sig_inst
-             mr  = null (sig_inst_theta sig_inst) &&
-                   isNothing (sig_inst_wcx sig_inst)
+             infer_mode | null (sig_inst_theta sig_inst)
+                        , isNothing (sig_inst_wcx sig_inst)
+                        = ApplyMR
+                        | otherwise
+                        = NoRestrictions
        ; (qtvs, givens, ev_binds)
-                 <- simplifyInfer tclvl mr [sig_inst] [(name, tau)] wanted
+                 <- simplifyInfer tclvl infer_mode [sig_inst] [(name, tau)] wanted
        ; tau <- zonkTcType tau
        ; let inferred_theta = map evVarPred givens
              tau_tvs        = tyCoVarsOfType tau
        ; (binders, my_theta) <- chooseInferredQuantifiers inferred_theta
                                    tau_tvs qtvs (Just sig_inst)
-       ; let inferred_sigma = mkInvSigmaTy qtvs inferred_theta tau
+       ; let inferred_sigma = mkInfSigmaTy qtvs inferred_theta tau
              my_sigma       = mkForAllTys binders (mkPhiTy  my_theta tau)
        ; wrap <- if inferred_sigma `eqType` my_sigma -- NB: eqType ignores vis.
                  then return idHsWrapper  -- Fast path; also avoids complaint when we infer

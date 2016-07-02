@@ -19,7 +19,7 @@ module TyCon(
         TyConBinder, TyConBndrVis(..),
         mkNamedTyConBinder, mkNamedTyConBinders,
         mkAnonTyConBinder, mkAnonTyConBinders,
-        tyConBinderVisibility, isNamedTyConBinder,
+        tyConBinderArgFlag, isNamedTyConBinder,
         isVisibleTyConBinder, isInvisibleTyConBinder,
 
         -- ** Field labels
@@ -60,7 +60,6 @@ module TyCon(
         isUnliftedTyCon,
         isGadtSyntaxTyCon, isInjectiveTyCon, isGenerativeTyCon, isGenInjAlgRhs,
         isTyConAssoc, tyConAssoc_maybe,
-        isRecursiveTyCon,
         isImplicitTyCon,
         isTyConWithSrcDataCons,
         isTcTyCon,
@@ -87,6 +86,7 @@ module TyCon(
         algTyConRhs,
         newTyConRhs, newTyConEtadArity, newTyConEtadRhs,
         unwrapNewTyCon_maybe, unwrapNewTyConEtad_maybe,
+        newTyConDataCon_maybe,
         algTcFields,
         tyConRuntimeRepInfo,
         tyConBinders, tyConResKind,
@@ -215,7 +215,7 @@ See also Note [Wrappers for data instance tycons] in MkId.hs
 * The axiom ax_ti may be eta-reduced; see
   Note [Eta reduction for data family axioms] in TcInstDcls
 
-* The data contructor T2 has a wrapper (which is what the
+* The data constructor T2 has a wrapper (which is what the
   source-level "T2" invokes):
 
         $WT2 :: Bool -> T Int
@@ -375,7 +375,7 @@ See also:
 type TyConBinder = TyVarBndr TyVar TyConBndrVis
 
 data TyConBndrVis
-  = NamedTCB VisibilityFlag
+  = NamedTCB ArgFlag
   | AnonTCB
 
 mkAnonTyConBinder :: TyVar -> TyConBinder
@@ -384,17 +384,17 @@ mkAnonTyConBinder tv = TvBndr tv AnonTCB
 mkAnonTyConBinders :: [TyVar] -> [TyConBinder]
 mkAnonTyConBinders tvs = map mkAnonTyConBinder tvs
 
-mkNamedTyConBinder :: VisibilityFlag -> TyVar -> TyConBinder
+mkNamedTyConBinder :: ArgFlag -> TyVar -> TyConBinder
 -- The odd argument order supports currying
 mkNamedTyConBinder vis tv = TvBndr tv (NamedTCB vis)
 
-mkNamedTyConBinders :: VisibilityFlag -> [TyVar] -> [TyConBinder]
+mkNamedTyConBinders :: ArgFlag -> [TyVar] -> [TyConBinder]
 -- The odd argument order supports currying
 mkNamedTyConBinders vis tvs = map (mkNamedTyConBinder vis) tvs
 
-tyConBinderVisibility :: TyConBinder -> VisibilityFlag
-tyConBinderVisibility (TvBndr _ (NamedTCB vis)) = vis
-tyConBinderVisibility (TvBndr _ AnonTCB)        = Visible
+tyConBinderArgFlag :: TyConBinder -> ArgFlag
+tyConBinderArgFlag (TvBndr _ (NamedTCB vis)) = vis
+tyConBinderArgFlag (TvBndr _ AnonTCB)        = Required
 
 isNamedTyConBinder :: TyConBinder -> Bool
 isNamedTyConBinder (TvBndr _ (NamedTCB {})) = True
@@ -402,7 +402,7 @@ isNamedTyConBinder _                        = False
 
 isVisibleTyConBinder :: TyVarBndr tv TyConBndrVis -> Bool
 -- Works for IfaceTyConBinder too
-isVisibleTyConBinder (TvBndr _ (NamedTCB vis)) = isVisible vis
+isVisibleTyConBinder (TvBndr _ (NamedTCB vis)) = isVisibleArgFlag vis
 isVisibleTyConBinder (TvBndr _ AnonTCB)        = True
 
 isInvisibleTyConBinder :: TyVarBndr tv TyConBndrVis -> Bool
@@ -432,14 +432,14 @@ They fit together like so:
 
     type App a (b :: k) = a b
 
-  tyConBinders = [ TvBndr (k::*)   (NamedTCB Invisible)
+  tyConBinders = [ TvBndr (k::*)   (NamedTCB Inferred)
                  , TvBndr (a:k->*) AnonTCB
                  , TvBndr (b:k)    AnonTCB ]
 
   Note that that are three binders here, including the
   kind variable k.
 
-  See Note [TyBinders and VisibilityFlags] in TyConRep for what
+  See Note [TyBinders and ArgFlags] in TyCoRep for what
   the visibility flag means.
 
 * Each TyConBinder tyConBinders has a TyVar, and that TyVar may
@@ -467,9 +467,9 @@ They fit together like so:
 
 instance Outputable tv => Outputable (TyVarBndr tv TyConBndrVis) where
   ppr (TvBndr v AnonTCB)              = ppr v
-  ppr (TvBndr v (NamedTCB Visible))   = ppr v
+  ppr (TvBndr v (NamedTCB Required))  = ppr v
   ppr (TvBndr v (NamedTCB Specified)) = char '@' <> ppr v
-  ppr (TvBndr v (NamedTCB Invisible)) = braces (ppr v)
+  ppr (TvBndr v (NamedTCB Inferred))  = braces (ppr v)
 
 instance Binary TyConBndrVis where
   put_ bh AnonTCB        = putByte bh 0
@@ -588,9 +588,6 @@ data TyCon
 
         algTcFields :: FieldLabelEnv, -- ^ Maps a label to information
                                       -- about the field
-
-        algTcRec    :: RecFlag,     -- ^ Tells us whether the data type is part
-                                    -- of a mutually-recursive group or not
 
         algTcParent :: AlgTyConFlav -- ^ Gives the class or family declaration
                                        -- 'TyCon' for derived 'TyCon's representing
@@ -1326,10 +1323,9 @@ mkAlgTyCon :: Name
            -> AlgTyConRhs       -- ^ Information about data constructors
            -> AlgTyConFlav      -- ^ What flavour is it?
                                 -- (e.g. vanilla, type family)
-           -> RecFlag           -- ^ Is the 'TyCon' recursive?
            -> Bool              -- ^ Was the 'TyCon' declared with GADT syntax?
            -> TyCon
-mkAlgTyCon name binders res_kind roles cType stupid rhs parent is_rec gadt_syn
+mkAlgTyCon name binders res_kind roles cType stupid rhs parent gadt_syn
   = AlgTyCon {
         tyConName        = name,
         tyConUnique      = nameUnique name,
@@ -1344,18 +1340,17 @@ mkAlgTyCon name binders res_kind roles cType stupid rhs parent is_rec gadt_syn
         algTcRhs         = rhs,
         algTcFields      = fieldsOfAlgTcRhs rhs,
         algTcParent      = ASSERT2( okParent name parent, ppr name $$ ppr parent ) parent,
-        algTcRec         = is_rec,
         algTcGadtSyntax  = gadt_syn
     }
 
 -- | Simpler specialization of 'mkAlgTyCon' for classes
 mkClassTyCon :: Name -> [TyConBinder]
              -> [Role] -> AlgTyConRhs -> Class
-             -> RecFlag -> Name -> TyCon
-mkClassTyCon name binders roles rhs clas is_rec tc_rep_name
+             -> Name -> TyCon
+mkClassTyCon name binders roles rhs clas tc_rep_name
   = mkAlgTyCon name binders constraintKind roles Nothing [] rhs
                (ClassTyCon clas tc_rep_name)
-               is_rec False
+               False
 
 mkTupleTyCon :: Name
              -> [TyConBinder]
@@ -1381,7 +1376,6 @@ mkTupleTyCon name binders res_kind arity con sort parent
                                         tup_sort = sort },
         algTcFields      = emptyDFsEnv,
         algTcParent      = parent,
-        algTcRec         = NonRecursive,
         algTcGadtSyntax  = False
     }
 
@@ -1815,11 +1809,6 @@ isBoxedTupleTyCon (AlgTyCon { algTcRhs = rhs })
   = isBoxed (tupleSortBoxity sort)
 isBoxedTupleTyCon _ = False
 
--- | Is this a recursive 'TyCon'?
-isRecursiveTyCon :: TyCon -> Bool
-isRecursiveTyCon (AlgTyCon {algTcRec = Recursive}) = True
-isRecursiveTyCon _                                 = False
-
 -- | Is this a PromotedDataCon?
 isPromotedDataCon :: TyCon -> Bool
 isPromotedDataCon (PromotedDataCon {}) = True
@@ -2051,6 +2040,10 @@ newTyConCo tc = case newTyConCo_maybe tc of
                  Just co -> co
                  Nothing -> pprPanic "newTyConCo" (ppr tc)
 
+newTyConDataCon_maybe :: TyCon -> Maybe DataCon
+newTyConDataCon_maybe (AlgTyCon {algTcRhs = NewTyCon { data_con = con }}) = Just con
+newTyConDataCon_maybe _ = Nothing
+
 -- | Find the \"stupid theta\" of the 'TyCon'. A \"stupid theta\" is the context
 -- to the left of an algebraic type declaration, e.g. @Eq a@ in the declaration
 -- @data Eq a => T a ...@
@@ -2139,13 +2132,6 @@ tyConRuntimeRepInfo _                                         = NoRRI
 instance Eq TyCon where
     a == b = getUnique a == getUnique b
     a /= b = getUnique a /= getUnique b
-
-instance Ord TyCon where
-    a <= b = case (a `compare` b) of { LT -> True;  EQ -> True;  GT -> False }
-    a <  b = case (a `compare` b) of { LT -> True;  EQ -> False; GT -> False }
-    a >= b = case (a `compare` b) of { LT -> False; EQ -> True;  GT -> True  }
-    a >  b = case (a `compare` b) of { LT -> False; EQ -> False; GT -> True  }
-    compare a b = getUnique a `compare` getUnique b
 
 instance Uniquable TyCon where
     getUnique tc = tyConUnique tc
@@ -2260,10 +2246,7 @@ initRecTc = RC 100 emptyNameEnv
 checkRecTc :: RecTcChecker -> TyCon -> Maybe RecTcChecker
 -- Nothing      => Recursion detected
 -- Just rec_tcs => Keep going
-checkRecTc rc@(RC bound rec_nts) tc
-  | not (isRecursiveTyCon tc)
-  = Just rc  -- Tuples are a common example here
-  | otherwise
+checkRecTc (RC bound rec_nts) tc
   = case lookupNameEnv rec_nts tc_name of
       Just n | n >= bound -> Nothing
              | otherwise  -> Just (RC bound (extendNameEnv rec_nts tc_name (n+1)))

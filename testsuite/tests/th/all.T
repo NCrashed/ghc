@@ -8,7 +8,9 @@ def f(name, opts):
     opts.extra_hc_opts = '-XTemplateHaskell -package template-haskell'
 setTestOpts(f)
 setTestOpts(req_interp)
-setTestOpts(only_ways(['normal','ghci']))
+# TH should work with -fexternal-interpreter too
+setTestOpts(extra_ways(['ext-interp']))
+setTestOpts(only_ways(['normal','ghci','ext-interp']))
 
 test('TH_mkName', normal, compile, ['-v0'])
 test('TH_1tuple', normal, compile_fail, ['-v0'])
@@ -46,6 +48,7 @@ test('TH_NestedSplices',
 # normal way first, which is why the work is done by a Makefile rule.
 test('TH_spliceE5_prof',
      [req_profiling,
+      only_ways(['normal']),
       when(ghc_dynamic(), expect_broken(11495)),
       extra_clean(['TH_spliceE5_prof_Lib.p.o', 'TH_spliceE5_prof_Lib.hi',
                    'TH_spliceE5_prof_Lib.dyn_o', 'TH_spliceE5_prof_Lib.dyn_hi',
@@ -56,7 +59,7 @@ test('TH_spliceE5_prof',
 
 test('TH_spliceE5_prof_ext',
      [req_profiling,
-      omit_ways(['ghci']),
+      only_ways(['normal']),
       extra_clean(['TH_spliceE5_prof_ext_Lib.hi',
                    'TH_spliceE5_prof_ext_Lib.o'])],
      run_command,
@@ -129,7 +132,7 @@ test('TH_scopedTvs', normal, compile, ['-v0'])
 
 test('TH_runIO', normal, compile_fail, ['-v0'])
 
-test('TH_ghci1', normal, ghci_script, ['TH_ghci1.script'])
+test('TH_ghci1', only_ways(['ghci']), ghci_script, ['TH_ghci1.script'])
 
 test('TH_linePragma', normal, compile_fail, ['-v0'])
 
@@ -143,8 +146,9 @@ test('T2713', normal, compile_fail, ['-v0'])
 test('T2674', normal, compile_fail, ['-v0'])
 test('TH_emptycase', normal, compile, ['-v0'])
 
-test('T2386', extra_clean(['T2386_Lib.hi', 'T2386_Lib.o']),
-	      run_command,
+test('T2386', [ extra_clean(['T2386_Lib.hi', 'T2386_Lib.o']),
+                only_ways(['normal']) ],
+              run_command,
 	      ['$MAKE -s --no-print-directory T2386'] )
 
 test('T2685', extra_clean(['T2685a.hi','T2685a.o']),
@@ -214,7 +218,9 @@ test('T5434', extra_clean(['T5434a.hi','T5434a.o']),
 test('T5508', normal, compile, ['-v0 -ddump-splices -dsuppress-uniques'])
 test('TH_Depends',
      [extra_clean(['TH_Depends_External.o', 'TH_Depends_External.hi',
-                   'TH_Depends_external.txt'])],
+                   'TH_Depends_external.txt']),
+      only_ways(['normal']),
+     ],
      run_command,
      ['$MAKE -s --no-print-directory TH_Depends'])
 test('T5597', extra_clean(['T5597a.hi','T5597a.o']),
@@ -259,20 +265,23 @@ test('T7064',
 test('T7092', extra_clean(['T7092a.hi','T7092a.o']),
               multimod_compile, ['T7092', '-v0 ' + config.ghc_th_way_flags])
 test('T7276', normal, compile_fail, ['-v0'])
-test('T7276a', combined_output, ghci_script, ['T7276a.script'])
+test('T7276a', [ only_ways(['ghci']), combined_output ],
+               ghci_script, ['T7276a.script'])
 
 test('TH_TyInstWhere1', normal, compile, ['-v0 -ddump-splices -dsuppress-uniques'])
 test('TH_TyInstWhere2', normal, compile, ['-v0'])
 
-test('T7445', extra_clean(['T7445a.hi', 'T7445a.o']),
-	      run_command,
+test('T7445', [ extra_clean(['T7445a.hi', 'T7445a.o']),
+                only_ways(['normal']),
+              ],
+              run_command,
 	      ['$MAKE -s --no-print-directory T7445'] )
 test('T7532',
      extra_clean(['T7532a.hi', 'T7532a.o']),
      multimod_compile,
      ['T7532', '-v0 ' + config.ghc_th_way_flags])
 test('T2222', normal, compile, ['-v0'])
-test('T1849', normal, ghci_script, ['T1849.script'])
+test('T1849', only_ways(['ghci']), ghci_script, ['T1849.script'])
 test('T7681', normal, compile, ['-v0'])
 test('T7910', normal, compile_and_run, ['-v0'])
 
@@ -296,7 +305,7 @@ test('TH_Roles4', normal, compile, ['-v0'])
 test('T8186', normal, compile_and_run, ['-v0'])
 
 test('T8333',
-     normal,
+     only_ways(['normal']),
      run_command,
      ['$MAKE -s --no-print-directory T8333'])
 
@@ -317,7 +326,7 @@ test('T8577',
      extra_clean(['T8577a.hi', 'T8577a.o']),
      multimod_compile_fail,
      ['T8577', '-v0 ' + config.ghc_th_way_flags])
-test('T8625', normal, ghci_script, ['T8625.script'])
+test('T8625', only_ways(['ghci']), ghci_script, ['T8625.script'])
 test('TH_StaticPointers', [when(doing_ghci(), extra_hc_opts('-fobject-code'))],
      compile_and_run, [''])
 test('TH_StaticPointers02', [], compile_fail, [''])
@@ -346,10 +355,12 @@ test('T7484', normal, compile_fail, ['-v0'])
 test('T1476', normal, compile, ['-v0'])
 test('T1476b', normal, compile, ['-v0'])
 test('T8031', normal, compile, ['-v0'])
-test('T8624', normal, run_command, ['$MAKE -s --no-print-directory T8624'])
+test('T8624', only_ways(['normal']),
+              run_command,
+              ['$MAKE -s --no-print-directory T8624'])
 test('TH_Lift', normal, compile, ['-v0'])
-test('T10047', normal, ghci_script, ['T10047.script'])
-test('T10019', normal, ghci_script, ['T10019.script'])
+test('T10047', only_ways(['ghci']), ghci_script, ['T10047.script'])
+test('T10019', only_ways(['ghci']), ghci_script, ['T10019.script'])
 test('T10267', extra_clean(['T10267a.hi', 'T10267a.o']),
                multimod_compile_fail,
                ['T10267', '-dsuppress-uniques -v0 ' + config.ghc_th_way_flags])
@@ -403,7 +414,6 @@ test('T11809', normal, compile, ['-v0'])
 test('T11797', normal, compile, ['-v0 -dsuppress-uniques'])
 test('T11941', normal, compile_fail, ['-v0'])
 test('T11484', normal, compile, ['-v0'])
-test('T8761', unless(ghc_dynamic(), expect_broken(12077)), compile,
-     ['-v0 -ddump-splices -dsuppress-uniques'])
+test('T8761', normal, compile, ['-v0 -ddump-splices -dsuppress-uniques'])
 test('T12130', extra_clean(['T12130a.hi','T12130a.o']),
               multimod_compile, ['T12130', '-v0 ' + config.ghc_th_way_flags])

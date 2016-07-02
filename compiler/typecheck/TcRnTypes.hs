@@ -73,7 +73,7 @@ module TcRnTypes(
         isUserTypeErrorCt, getUserTypeErrorMsg,
         ctEvidence, ctLoc, setCtLoc, ctPred, ctFlavour, ctEqRel, ctOrigin,
         mkTcEqPredLikeEv,
-        mkNonCanonical, mkNonCanonicalCt,
+        mkNonCanonical, mkNonCanonicalCt, mkGivens,
         ctEvPred, ctEvLoc, ctEvOrigin, ctEvEqRel,
         ctEvTerm, ctEvCoercion, ctEvId,
         tyCoVarsOfCt, tyCoVarsOfCts,
@@ -695,7 +695,7 @@ data TcLclEnv           -- Changes as we move inside an expression
                 --   Does *not* include global name envt; may shadow it
                 --   Includes both ordinary variables and type variables;
                 --   they are kept distinct because tyvar have a different
-                --   occurrence contructor (Name.TvOcc)
+                --   occurrence constructor (Name.TvOcc)
                 -- We still need the unsullied global name env so that
                 --   we can look up record field names
 
@@ -1304,7 +1304,7 @@ Here we get
 data TcPatSynInfo
   = TPSI {
         patsig_name           :: Name,
-        patsig_implicit_bndrs :: [TyVarBinder], -- Implicitly-bound kind vars (Invisible) and
+        patsig_implicit_bndrs :: [TyVarBinder], -- Implicitly-bound kind vars (Inferred) and
                                                 -- implicitly-bound type vars (Specified)
           -- See Note [The pattern-synonym signature splitting rule] in TcPatSyn
         patsig_univ_bndrs     :: [TyVar],       -- Bound by explicit user forall
@@ -1497,6 +1497,14 @@ mkNonCanonical ev = CNonCanonical { cc_ev = ev }
 
 mkNonCanonicalCt :: Ct -> Ct
 mkNonCanonicalCt ct = CNonCanonical { cc_ev = cc_ev ct }
+
+mkGivens :: CtLoc -> [EvId] -> [Ct]
+mkGivens loc ev_ids
+  = map mk ev_ids
+  where
+    mk ev_id = mkNonCanonical (CtGiven { ctev_evar = ev_id
+                                       , ctev_pred = evVarPred ev_id
+                                       , ctev_loc = loc })
 
 ctEvidence :: Ct -> CtEvidence
 ctEvidence = cc_ev

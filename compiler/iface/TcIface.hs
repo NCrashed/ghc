@@ -320,7 +320,7 @@ tc_iface_decl _ _ (IfaceData {ifName = occ_name,
                           ifRoles = roles,
                           ifCtxt = ctxt, ifGadtSyntax = gadt_syn,
                           ifCons = rdr_cons,
-                          ifRec = is_rec, ifParent = mb_parent })
+                          ifParent = mb_parent })
   = bindIfaceTyConBinders_AT binders $ \ binders' -> do
     { tc_name <- lookupIfaceTop occ_name
     ; res_kind' <- tcIfaceType res_kind
@@ -331,7 +331,7 @@ tc_iface_decl _ _ (IfaceData {ifName = occ_name,
             ; cons <- tcIfaceDataCons tc_name tycon binders' rdr_cons
             ; return (mkAlgTyCon tc_name binders' res_kind'
                                  roles cType stupid_theta
-                                 cons parent' is_rec gadt_syn) }
+                                 cons parent' gadt_syn) }
     ; traceIf (text "tcIfaceDecl4" <+> ppr tycon)
     ; return (ATyCon tycon) }
   where
@@ -397,7 +397,7 @@ tc_iface_decl _parent ignore_prags
                          ifBinders = binders,
                          ifFDs = rdr_fds,
                          ifATs = rdr_ats, ifSigs = rdr_sigs,
-                         ifMinDef = mindef_occ, ifRec = tc_isrec })
+                         ifMinDef = mindef_occ })
 -- ToDo: in hs-boot files we should really treat abstract classes specially,
 --       as we do abstract tycons
   = bindIfaceTyConBinders binders $ \ binders' -> do
@@ -412,7 +412,7 @@ tc_iface_decl _parent ignore_prags
     ; cls  <- fixM $ \ cls -> do
               { ats  <- mapM (tc_at cls) rdr_ats
               ; traceIf (text "tc-iface-class4" <+> ppr tc_occ)
-              ; buildClass tc_name binders' roles ctxt fds ats sigs mindef tc_isrec }
+              ; buildClass tc_name binders' roles ctxt fds ats sigs mindef }
     ; return (ATyCon (classTyCon cls)) }
   where
    tc_sc pred = forkM (mk_sc_doc pred) (tcIfaceType pred)
@@ -521,7 +521,7 @@ tc_ax_branch prev_branches
                             , ifaxbLHS = lhs, ifaxbRHS = rhs
                             , ifaxbRoles = roles, ifaxbIncomps = incomps })
   = bindIfaceTyConBinders_AT
-      (map (\b -> TvBndr b (NamedTCB Invisible)) tv_bndrs) $ \ tvs ->
+      (map (\b -> TvBndr b (NamedTCB Inferred)) tv_bndrs) $ \ tvs ->
          -- The _AT variant is needed here; see Note [CoAxBranch type variables] in CoAxiom
     bindIfaceIds cv_bndrs $ \ cvs -> do
     { tc_lhs <- tcIfaceTcArgs lhs
@@ -1448,7 +1448,7 @@ bindIfaceForAllBndrs (bndr:bndrs) thing_inside
     bindIfaceForAllBndrs bndrs $ \bndrs' ->
     thing_inside (mkTyVarBinder vis tv : bndrs')
 
-bindIfaceForAllBndr :: IfaceForAllBndr -> (TyVar -> VisibilityFlag -> IfL a) -> IfL a
+bindIfaceForAllBndr :: IfaceForAllBndr -> (TyVar -> ArgFlag -> IfL a) -> IfL a
 bindIfaceForAllBndr (TvBndr tv vis) thing_inside
   = bindIfaceTyVar tv $ \tv' -> thing_inside tv' vis
 
