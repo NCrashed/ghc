@@ -192,9 +192,13 @@ instance Ord FastString where
             | otherwise =  y
     compare a b = cmpFS a b
 
+instance IsString FastString where
+    fromString = fsLit
+
 instance Monoid FastString where
     mempty = nilFS
     mappend = appendFS
+    mconcat = concatFS
 
 instance Show FastString where
    show fs = show (unpackFS fs)
@@ -512,7 +516,7 @@ appendFS fs1 fs2 = mkFastStringByteString
                              (fastStringToByteString fs2)
 
 concatFS :: [FastString] -> FastString
-concatFS ls = mkFastString (Prelude.concat (map unpackFS ls)) -- ToDo: do better
+concatFS = mkFastStringByteString . BS.concat . map fs_bs
 
 headFS :: FastString -> Char
 headFS (FastString _ 0 _ _) = panic "headFS: Empty FastString"

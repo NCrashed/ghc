@@ -323,9 +323,6 @@ instance Ord RdrName where
 -- It is keyed by OccName, because we never use it for qualified names
 -- We keep the current mapping, *and* the set of all Names in scope
 -- Reason: see Note [Splicing Exact names] in RnEnv
--- The field lre_nwcs is used to keep names of type variables that should
--- be replaced with named wildcards.
--- See Note [Renaming named wild cards] in RnTypes
 data LocalRdrEnv = LRE { lre_env      :: OccEnv Name
                        , lre_in_scope :: NameSet }
 
@@ -1142,7 +1139,7 @@ ppr_defn_site imp_spec name
                 2 (pprLoc loc)
   where
     loc = nameSrcSpan name
-    defining_mod = nameModule name
+    defining_mod = ASSERT2( isExternalName name, ppr name ) nameModule name
     same_module = importSpecModule imp_spec == moduleName defining_mod
     pp_mod | same_module = empty
            | otherwise   = text "in" <+> quotes (ppr defining_mod)

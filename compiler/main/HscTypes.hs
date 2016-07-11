@@ -87,7 +87,7 @@ module HscTypes (
         TypeEnv, lookupType, lookupTypeHscEnv, mkTypeEnv, emptyTypeEnv,
         typeEnvFromEntities, mkTypeEnvWithImplicits,
         extendTypeEnv, extendTypeEnvList,
-        extendTypeEnvWithIds,
+        extendTypeEnvWithIds, plusTypeEnv,
         lookupTypeEnv,
         typeEnvElts, typeEnvTyCons, typeEnvIds, typeEnvPatSyns,
         typeEnvDataCons, typeEnvCoAxioms, typeEnvClasses,
@@ -1650,7 +1650,8 @@ mkPrintUnqualified dflags env = QueryQualify qual_name
                             -- Eg  f = True; g = 0; f = False
       where
         is_name :: Name -> Bool
-        is_name name = nameModule name == mod && nameOccName name == occ
+        is_name name = ASSERT2( isExternalName name, ppr name )
+                       nameModule name == mod && nameOccName name == occ
 
         forceUnqualNames :: [Name]
         forceUnqualNames =
@@ -1939,6 +1940,9 @@ extendTypeEnvList env things = foldl extendTypeEnv env things
 extendTypeEnvWithIds :: TypeEnv -> [Id] -> TypeEnv
 extendTypeEnvWithIds env ids
   = extendNameEnvList env [(getName id, AnId id) | id <- ids]
+
+plusTypeEnv :: TypeEnv -> TypeEnv -> TypeEnv
+plusTypeEnv env1 env2 = plusNameEnv env1 env2
 
 -- | Find the 'TyThing' for the given 'Name' by using all the resources
 -- at our disposal: the compiled modules in the 'HomePackageTable' and the
@@ -2639,7 +2643,7 @@ on just the OccName easily in a Core pass.
 --
 data VectInfo
   = VectInfo
-    { vectInfoVar            :: VarEnv  (Var    , Var  )    -- ^ @(f, f_v)@ keyed on @f@
+    { vectInfoVar            :: DVarEnv (Var    , Var  )    -- ^ @(f, f_v)@ keyed on @f@
     , vectInfoTyCon          :: NameEnv (TyCon  , TyCon)    -- ^ @(T, T_v)@ keyed on @T@
     , vectInfoDataCon        :: NameEnv (DataCon, DataCon)  -- ^ @(C, C_v)@ keyed on @C@
     , vectInfoParallelVars   :: DVarSet                     -- ^ set of parallel variables
@@ -2673,11 +2677,11 @@ data IfaceVectInfo
 
 noVectInfo :: VectInfo
 noVectInfo
-  = VectInfo emptyVarEnv emptyNameEnv emptyNameEnv emptyDVarSet emptyNameSet
+  = VectInfo emptyDVarEnv emptyNameEnv emptyNameEnv emptyDVarSet emptyNameSet
 
 plusVectInfo :: VectInfo -> VectInfo -> VectInfo
 plusVectInfo vi1 vi2 =
-  VectInfo (vectInfoVar            vi1 `plusVarEnv`    vectInfoVar            vi2)
+  VectInfo (vectInfoVar            vi1 `plusDVarEnv`   vectInfoVar            vi2)
            (vectInfoTyCon          vi1 `plusNameEnv`   vectInfoTyCon          vi2)
            (vectInfoDataCon        vi1 `plusNameEnv`   vectInfoDataCon        vi2)
            (vectInfoParallelVars   vi1 `unionDVarSet`  vectInfoParallelVars   vi2)

@@ -22,6 +22,9 @@ Language
 
 -  TODO FIXME.
 
+- Pattern synonym signatures can now be applied to multiple patterns, just like
+  value-level binding signatures. See :ref:`patsyn-typing` for details.
+
 Compiler
 ~~~~~~~~
 
@@ -40,6 +43,13 @@ Template Haskell
 ~~~~~~~~~~~~~~~~
 
 -  TODO FIXME.
+
+- ``addModFinalizer`` now exposes the local typing environment at the splice
+  point. This allows ``reify`` to see local and top-level definitions in the
+  current declaration group when used as in
+
+  .. code-block:: none
+  f x = $(addModFinalizer (reify 'x >>= runIO . print) >> [| x |])
 
 Runtime system
 ~~~~~~~~~~~~~~

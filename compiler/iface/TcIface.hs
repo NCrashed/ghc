@@ -437,13 +437,13 @@ tc_iface_decl _parent ignore_prags
 
    tc_dm :: SDoc
          -> Maybe (DefMethSpec IfaceType)
-         -> IfL (Maybe (DefMethSpec Type))
+         -> IfL (Maybe (DefMethSpec (SrcSpan, Type)))
    tc_dm _   Nothing               = return Nothing
    tc_dm _   (Just VanillaDM)      = return (Just VanillaDM)
    tc_dm doc (Just (GenericDM ty))
         = do { -- Must be done lazily to avoid sucking in types
              ; ty' <- forkM (doc <+> text "dm") $ tcIfaceType ty
-             ; return (Just (GenericDM ty')) }
+             ; return (Just (GenericDM (noSrcSpan, ty'))) }
 
    tc_at cls (IfaceAT tc_decl if_def)
      = do ATyCon tc <- tc_iface_decl (Just cls) ignore_prags tc_decl
@@ -783,7 +783,7 @@ tcIfaceVectInfo mod typeEnv (IfaceVectInfo
        ; vParallelVars <- mapM vectVar                         parallelVars
        ; let (vTyCons, vDataCons, vScSels) = unzip3 (tyConRes1 ++ tyConRes2)
        ; return $ VectInfo
-                  { vectInfoVar            = mkVarEnv  vVars `extendVarEnvList` concat vScSels
+                  { vectInfoVar            = mkDVarEnv vVars `extendDVarEnvList` concat vScSels
                   , vectInfoTyCon          = mkNameEnv vTyCons
                   , vectInfoDataCon        = mkNameEnv (concat vDataCons)
                   , vectInfoParallelVars   = mkDVarSet vParallelVars

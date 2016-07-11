@@ -57,7 +57,7 @@ import Maybes
 import UniqSupply
 import ErrUtils (Severity(..))
 import Outputable
-import UniqFM
+import UniqDFM
 import SrcLoc
 import qualified ErrUtils as Err
 
@@ -350,7 +350,7 @@ tidyProgram hsc_env  (ModGuts { mg_module    = mod
                                     isExternalName (idName id)]
               ; type_env1  = extendTypeEnvWithIds type_env final_ids
 
-              ; tidy_cls_insts = map (tidyClsInstDFun (lookup_aux_id tidy_type_env)) cls_insts
+              ; tidy_cls_insts = map (tidyClsInstDFun (tidyVarOcc tidy_env)) cls_insts
                 -- A DFunId will have a binding in tidy_binds, and so will now be in
                 -- tidy_type_env, replete with IdInfo.  Its name will be unchanged since
                 -- it was born, but we want Global, IdInfo-rich (or not) DFunId in the
@@ -367,7 +367,7 @@ tidyProgram hsc_env  (ModGuts { mg_module    = mod
                 -- and then override the PatSyns in the type_env with the new tidy ones
                 -- This is really the only reason we keep mg_patsyns at all; otherwise
                 -- they could just stay in type_env
-              ; tidy_patsyns = map (tidyPatSynIds (lookup_aux_id tidy_type_env)) patsyns
+              ; tidy_patsyns = map (tidyPatSynIds (tidyVarOcc tidy_env)) patsyns
               ; type_env2    = extendTypeEnvWithPatSyns tidy_patsyns type_env1
 
               ; tidy_type_env = tidyTypeEnv omit_prags type_env2
@@ -429,12 +429,6 @@ tidyProgram hsc_env  (ModGuts { mg_module    = mod
   where
     dflags = hsc_dflags hsc_env
 
-lookup_aux_id :: TypeEnv -> Var -> Id
-lookup_aux_id type_env id
-  = case lookupTypeEnv type_env (idName id) of
-        Just (AnId id') -> id'
-        _other          -> pprPanic "lookup_aux_id" (ppr id)
-
 tidyTypeEnv :: Bool       -- Compiling without -O, so omit prags
             -> TypeEnv -> TypeEnv
 
@@ -484,17 +478,14 @@ tidyVectInfo (_, var_env) info@(VectInfo { vectInfoVar          = vars
   where
       -- we only export mappings whose domain and co-domain is exported (otherwise, the iface is
       -- inconsistent)
-    tidy_vars = mkVarEnv [ (tidy_var, (tidy_var, tidy_var_v))
-                         | (var, var_v) <- nonDetEltsUFM vars
-                         -- It's OK to use nonDetEltsUFM here because we
-                         -- immediately forget the ordering by creating
-                         -- a new env
-                         , let tidy_var   = lookup_var var
-                               tidy_var_v = lookup_var var_v
-                         , isExternalId tidy_var   && isExportedId tidy_var
-                         , isExternalId tidy_var_v && isExportedId tidy_var_v
-                         , isDataConWorkId var || not (isImplicitId var)
-                         ]
+    tidy_vars = mkDVarEnv [ (tidy_var, (tidy_var, tidy_var_v))
+                          | (var, var_v) <- eltsUDFM vars
+                          , let tidy_var   = lookup_var var
+                                tidy_var_v = lookup_var var_v
+                          , isExternalId tidy_var   && isExportedId tidy_var
+                          , isExternalId tidy_var_v && isExportedId tidy_var_v
+                          , isDataConWorkId var || not (isImplicitId var)
+                          ]
 
     tidy_parallelVars = mkDVarSet
                           [ tidy_var
@@ -625,7 +616,7 @@ chooseExternalIds :: HscEnv
                   -> [CoreBind]
                   -> [CoreBind]
                   -> [CoreRule]
-                  -> VarEnv (Var, Var)
+                  -> DVarEnv (Var, Var)
                   -> IO (UnfoldEnv, TidyOccEnv)
                   -- Step 1 from the notes above
 
@@ -662,9 +653,7 @@ chooseExternalIds hsc_env mod omit_prags expose_all binds implicit_binds imp_id_
     isJust $ collectStaticPtrSatArgs e
 
   rule_rhs_vars  = mapUnionVarSet ruleRhsFreeVars imp_id_rules
-  vect_var_vs    = mkVarSet [var_v | (var, var_v) <- nonDetEltsUFM vect_vars, isGlobalId var]
-    -- It's OK to use nonDetEltsUFM here because we immediately forget the
-    -- ordering by creating a set
+  vect_var_vs    = mkVarSet [var_v | (var, var_v) <- eltsUDFM vect_vars, isGlobalId var]
 
   flatten_binds    = flattenBinds binds
   binders          = map fst flatten_binds
@@ -716,7 +705,7 @@ chooseExternalIds hsc_env mod omit_prags expose_all binds implicit_binds imp_id_
                 | otherwise  = addExternal expose_all refined_id
 
                 -- add vectorised version if any exists
-          new_ids' = new_ids ++ maybeToList (fmap snd $ lookupVarEnv vect_vars idocc)
+          new_ids' = new_ids ++ maybeToList (fmap snd $ lookupDVarEnv vect_vars idocc)
 
                 -- 'idocc' is an *occurrence*, but we need to see the
                 -- unfolding in the *definition*; so look up in binder_set
