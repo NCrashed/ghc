@@ -1191,7 +1191,6 @@ void resizeEventsBuf(EventsBuf* eb, StgWord64 size)
 void resizeEventLog(StgWord64 size)
 {
     ACQUIRE_LOCK(&eventBufMutex);
-    StgWord32 c;
 
     // Reallocate chunked buffer if enabled
     if (RtsFlags.TraceFlags.in_memory) {
