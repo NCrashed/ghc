@@ -54,4 +54,4 @@ void vectorShrink(Vector **vec);
 
 #include "EndPrivate.h"
 
-#endif /* CHUNKED_BUFFER_H */
+#endif /* EVENTLOG_VECTOR_H */
