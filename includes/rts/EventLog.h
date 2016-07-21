@@ -12,11 +12,6 @@
 #ifndef RTS_EVENTLOG_H
 #define RTS_EVENTLOG_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#ifdef TRACING
 /*
  * Set custom file stream for global event log sink.
  *
@@ -69,36 +64,5 @@ void rts_resizeEventLog(StgWord64 size);
  * Return current size of eventlog buffers.
  */
 StgWord64 rts_getEventLogBuffersSize(void);
-
-#else /* !TRACING */
-
-void rts_setEventLogSink(FILE    *sink       STG_UNUSED, 
-                         StgBool  closePrev  STG_UNUSED,
-                         StgBool  emitHeader STG_UNUSED)
-{ /* nothing */ }
-
-FILE* rts_getEventLogSink(void)
-{ 
-  return NULL;
-}
-
-StgWord64 rts_getEventLogChunk(StgInt8** ptr STG_UNUSED)
-{
-  return 0;
-}
-
-void rts_resizeEventLog(StgWord64 size STG_UNUSED) 
-{ /* nothing */ }
-
-StgWord64 rts_getEventLogBuffersSize(void)
-{
-  return 0;
-}
-
-#endif 
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* RTS_EVENTLOG_H */
