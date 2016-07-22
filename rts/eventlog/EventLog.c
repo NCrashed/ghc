@@ -1509,4 +1509,29 @@ StgWord64 rts_getEventLogBuffersSize(void)
     return ret;
 }
 
+#else 
+
+void rts_setEventLogSink(FILE    *sink       STG_UNUSED, 
+                         StgBool  closePrev  STG_UNUSED,
+                         StgBool  emitHeader STG_UNUSED)
+{ /* nothing */ }
+
+FILE* rts_getEventLogSink(void)
+{ 
+  return NULL;
+}
+
+StgWord64 rts_getEventLogChunk(StgInt8** ptr STG_UNUSED)
+{
+  return 0;
+}
+
+void rts_resizeEventLog(StgWord64 size STG_UNUSED) 
+{ /* nothing */ }
+
+StgWord64 rts_getEventLogBuffersSize(void)
+{
+  return 0;
+}
+
 #endif /* TRACING */
