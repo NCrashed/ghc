@@ -5,6 +5,7 @@
 -}
 
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 -- | This module is about types that can be defined in Haskell, but which
 --   must be wired into the compiler nonetheless.  C.f module TysPrim
@@ -77,6 +78,9 @@ module TysWiredIn (
         -- * Any
         anyTyCon, anyTy, anyTypeOfKind,
 
+        -- * Sums
+        mkSumTy, sumTyCon, sumDataCon,
+
         -- * Kinds
         typeNatKindCon, typeNatKind, typeSymbolKindCon, typeSymbolKind,
         isLiftedTypeKindTyConName, liftedTypeKind, constraintKind,
@@ -103,6 +107,7 @@ module TysWiredIn (
         voidRepDataConTy, intRepDataConTy,
         wordRepDataConTy, int64RepDataConTy, word64RepDataConTy, addrRepDataConTy,
         floatRepDataConTy, doubleRepDataConTy, unboxedTupleRepDataConTy,
+        unboxedSumRepDataConTy,
 
         vec2DataConTy, vec4DataConTy, vec8DataConTy, vec16DataConTy, vec32DataConTy,
         vec64DataConTy,
@@ -126,7 +131,7 @@ import TysPrim
 -- others:
 import CoAxiom
 import Id
-import Constants        ( mAX_TUPLE_SIZE, mAX_CTUPLE_SIZE )
+import Constants        ( mAX_TUPLE_SIZE, mAX_CTUPLE_SIZE, mAX_SUM_SIZE )
 import Module           ( Module )
 import Type
 import DataCon
@@ -134,11 +139,9 @@ import {-# SOURCE #-} ConLike
 import TyCon
 import Class            ( Class, mkClass )
 import RdrName
-import UniqFM
 import Name
 import NameSet          ( NameSet, mkNameSet, elemNameSet )
-import BasicTypes       ( Arity, Boxity(..),
-                          TupleSort(..) )
+import BasicTypes       ( Arity, Boxity(..), TupleSort(..), ConTagZ )
 import ForeignCall
 import SrcLoc           ( noSrcSpan )
 import Unique
@@ -147,6 +150,12 @@ import FastString
 import Outputable
 import Util
 import BooleanFormula   ( mkAnd )
+
+import qualified Data.ByteString.Char8 as BS
+#if !MIN_VERSION_bytestring(0,10,8)
+import qualified Data.ByteString.Internal as BSI
+import qualified Data.ByteString.Unsafe as BSU
+#endif
 
 alpha_tyvar :: [TyVar]
 alpha_tyvar = [alphaTyVar]
@@ -181,8 +190,7 @@ names in PrelNames, so they use wTcQual, wDataQual, etc
 -- define here.
 --
 -- Because of their infinite nature, this list excludes tuples, Any and implicit
--- parameter TyCons. Instead, we have a hack in lookupOrigNameCache to deal with
--- these names.
+-- parameter TyCons (see Note [Built-in syntax and the OrigNameCache]).
 --
 -- See also Note [Known-key names]
 wiredInTyCons :: [TyCon]
@@ -193,29 +201,29 @@ wiredInTyCons = [ unitTyCon     -- Not treated like other tuples, because
                                 -- that it'll pre-populate the name cache, so
                                 -- the special case in lookupOrigNameCache
                                 -- doesn't need to look out for it
-              , anyTyCon
-              , boolTyCon
-              , charTyCon
-              , doubleTyCon
-              , floatTyCon
-              , intTyCon
-              , wordTyCon
-              , word8TyCon
-              , listTyCon
-              , maybeTyCon
-              , parrTyCon
-              , heqTyCon
-              , coercibleTyCon
-              , typeNatKindCon
-              , typeSymbolKindCon
-              , runtimeRepTyCon
-              , vecCountTyCon
-              , vecElemTyCon
-              , constraintKindTyCon
-              , liftedTypeKindTyCon
-              , starKindTyCon
-              , unicodeStarKindTyCon
-              ]
+                , anyTyCon
+                , boolTyCon
+                , charTyCon
+                , doubleTyCon
+                , floatTyCon
+                , intTyCon
+                , wordTyCon
+                , word8TyCon
+                , listTyCon
+                , maybeTyCon
+                , parrTyCon
+                , heqTyCon
+                , coercibleTyCon
+                , typeNatKindCon
+                , typeSymbolKindCon
+                , runtimeRepTyCon
+                , vecCountTyCon
+                , vecElemTyCon
+                , constraintKindTyCon
+                , liftedTypeKindTyCon
+                , starKindTyCon
+                , unicodeStarKindTyCon
+                ]
 
 mkWiredInTyConName :: BuiltInSyntax -> Module -> FastString -> Unique -> TyCon -> Name
 mkWiredInTyConName built_in modu fs unique tycon
@@ -293,6 +301,10 @@ The type constructor Any,
 
 It has these properties:
 
+  * Note that 'Any' is kind polymorphic since in some program we may
+    need to use Any to fill in a type variable of some kind other than *
+    (see #959 for examples).  Its kind is thus `forall k. k``.
+
   * It is defined in module GHC.Types, and exported so that it is
     available to users.  For this reason it's treated like any other
     wired-in type:
@@ -309,7 +321,7 @@ It has these properties:
   * When instantiated at a lifted type it is inhabited by at least one value,
     namely bottom
 
-  * You can safely coerce any lifted type to Any, and back with unsafeCoerce.
+  * You can safely coerce any /lifted/ type to Any, and back with unsafeCoerce.
 
   * It does not claim to be a *data* type, and that's important for
     the code generator, because the code gen may *enter* a data value
@@ -317,6 +329,12 @@ It has these properties:
 
   * It is wired-in so we can easily refer to it where we don't have a name
     environment (e.g. see Rules.matchRule for one example)
+
+  * If (Any k) is the type of a value, it must be a /lifted/ value. So
+    if we have (Any @(TYPE rr)) then rr must be 'PtrRepLifted.  See
+    Note [TYPE and RuntimeRep] in TysPrim.  This is a convenient
+    invariant, and makes isUnliftedTyCon well-defined; otherwise what
+    would (isUnliftedTyCon Any) be?
 
 It's used to instantiate un-constrained type variables after type checking. For
 example, 'length' has type
@@ -334,10 +352,6 @@ choice.  In this situation GHC uses 'Any',
 > length (Any *) ([] (Any *))
 
 Above, we print kinds explicitly, as if with --fprint-explicit-kinds.
-
-Note that 'Any' is kind polymorphic since in some program we may need to use Any
-to fill in a type variable of some kind other than * (see #959 for examples).
-Its kind is thus `forall k. k``.
 
 The Any tycon used to be quite magic, but we have since been able to
 implement it merely with an empty kind polymorphic type family. See #10886 for a
@@ -390,7 +404,7 @@ runtimeRepSimpleDataConNames
       , fsLit "VoidRep", fsLit "IntRep"
       , fsLit "WordRep", fsLit "Int64Rep", fsLit "Word64Rep"
       , fsLit "AddrRep", fsLit "FloatRep", fsLit "DoubleRep"
-      , fsLit "UnboxedTupleRep" ]
+      , fsLit "UnboxedTupleRep", fsLit "UnboxedSumRep" ]
       runtimeRepSimpleDataConKeys
       runtimeRepSimpleDataCons
 
@@ -636,19 +650,42 @@ decl in GHC.Classes, so I think this part may not work properly. But
 it's unused I think.
 -}
 
-builtInOccNames :: UniqFM (OccName -> Name)
-builtInOccNames = listToUFM $
-    [ (fsLit "[]",    choose_ns listTyConName nilDataConName)
-    , (fsLit ":" ,    const consDataConName)
-    , (fsLit "[::]",  const parrTyConName)
-    , (fsLit "()",    tup_name Boxed 0)
-    , (fsLit "(##)",  tup_name Unboxed 0)
-    ] ++
-    [ (fsLit $ "("++replicate n ','++")", tup_name Boxed (n+1)) | n <- [1..62] ] ++
-    [ (fsLit $ "(#"++replicate n ','++"#)", tup_name Unboxed (n+1)) | n <- [1..62] ]
+-- | Built in syntax isn't "in scope" so these OccNames map to wired-in Names
+-- with BuiltInSyntax. However, this should only be necessary while resolving
+-- names produced by Template Haskell splices since we take care to encode
+-- built-in syntax names specially in interface files. See
+-- Note [Symbol table representation of names].
+isBuiltInOcc_maybe :: OccName -> Maybe Name
+isBuiltInOcc_maybe occ =
+    case name of
+      "[]" -> Just $ choose_ns listTyConName nilDataConName
+      ":"    -> Just consDataConName
+      "[::]" -> Just parrTyConName
+      "()"    -> Just $ tup_name Boxed 0
+      "(##)"  -> Just $ tup_name Unboxed 0
+      _ | Just rest <- "(" `stripPrefix` name
+        , (commas, rest') <- BS.span (==',') rest
+        , ")" <- rest'
+             -> Just $ tup_name Boxed (1+BS.length commas)
+      _ | Just rest <- "(#" `stripPrefix` name
+        , (commas, rest') <- BS.span (==',') rest
+        , "#)" <- rest'
+             -> Just $ tup_name Unboxed (1+BS.length commas)
+      _ -> Nothing
   where
-    choose_ns :: Name -> Name -> OccName -> Name
-    choose_ns tc dc occ
+    -- TODO: Drop when bytestring 0.10.8 can be assumed
+#if MIN_VERSION_bytestring(0,10,8)
+    stripPrefix = BS.stripPrefix
+#else
+    stripPrefix bs1@(BSI.PS _ _ l1) bs2
+      | bs1 `BS.isPrefixOf` bs2 = Just (BSU.unsafeDrop l1 bs2)
+      | otherwise = Nothing
+#endif
+
+    name = fastStringToByteString $ occNameFS occ
+
+    choose_ns :: Name -> Name -> Name
+    choose_ns tc dc
       | isTcClsNameSpace ns   = tc
       | isDataConNameSpace ns = dc
       | otherwise             = pprPanic "tup_name" (ppr occ)
@@ -657,15 +694,6 @@ builtInOccNames = listToUFM $
     tup_name boxity arity
       = choose_ns (getName (tupleTyCon   boxity arity))
                   (getName (tupleDataCon boxity arity))
-
-
-isBuiltInOcc_maybe :: OccName -> Maybe Name
--- Built in syntax isn't "in scope" so these OccNames
--- map to wired-in Names with BuiltInSyntax
-isBuiltInOcc_maybe occ
-  = case lookupUFM builtInOccNames (occNameFS occ) of
-      Just f  -> Just (f occ)
-      Nothing -> Nothing
 
 mkTupleOcc :: NameSpace -> Boxity -> Arity -> OccName
 -- No need to cache these, the caching is done in mk_tuple
@@ -764,10 +792,13 @@ mk_tuple Unboxed arity = (tycon, tuple_con)
                          UnboxedTuple flavour
 
     -- See Note [Unboxed tuple RuntimeRep vars] in TyCon
-    -- Kind:  forall (k1:RuntimeRep) (k2:RuntimeRep). TYPE k2 -> TYPE k2 -> #
+    -- Kind:  forall (k1:RuntimeRep) (k2:RuntimeRep). TYPE k1 -> TYPE k2 -> #
     tc_binders = mkTemplateTyConBinders (nOfThem arity runtimeRepTy)
                                         (\ks -> map tYPE ks)
-    tc_res_kind = unboxedTupleKind
+
+    tc_res_kind | arity == 0 = tYPE voidRepDataConTy  -- Nullary unboxed tuple
+                | otherwise  = unboxedTupleKind
+
     tc_arity    = arity * 2
     flavour     = UnboxedAlgTyCon
 
@@ -807,6 +838,106 @@ unboxedUnitDataCon = tupleDataCon   Unboxed 0
 
 
 {- *********************************************************************
+*                                                                      *
+      Unboxed sums
+*                                                                      *
+********************************************************************* -}
+
+-- | OccName for n-ary unboxed sum type constructor.
+mkSumTyConOcc :: Arity -> OccName
+mkSumTyConOcc n = mkOccName tcName str
+  where
+    -- No need to cache these, the caching is done in mk_sum
+    str = '(' : '#' : bars ++ "#)"
+    bars = replicate (n-1) '|'
+
+-- | OccName for i-th alternative of n-ary unboxed sum data constructor.
+mkSumDataConOcc :: ConTag -> Arity -> OccName
+mkSumDataConOcc alt n = mkOccName dataName str
+  where
+    -- No need to cache these, the caching is done in mk_sum
+    str = '(' : '#' : bars alt ++ '_' : bars (n - alt - 1) ++ "#)"
+    bars i = replicate i '|'
+
+-- | Type constructor for n-ary unboxed sum.
+sumTyCon :: Arity -> TyCon
+sumTyCon arity
+  | arity > mAX_SUM_SIZE
+  = fst (mk_sum arity)  -- Build one specially
+
+  | arity < 2
+  = panic ("sumTyCon: Arity starts from 2. (arity: " ++ show arity ++ ")")
+
+  | otherwise
+  = fst (unboxedSumArr ! arity)
+
+-- | Data constructor for i-th alternative of a n-ary unboxed sum.
+sumDataCon :: ConTag -- Alternative
+           -> Arity  -- Arity
+           -> DataCon
+sumDataCon alt arity
+  | alt > arity
+  = panic ("sumDataCon: index out of bounds: alt: "
+           ++ show alt ++ " > arity " ++ show arity)
+
+  | alt <= 0
+  = panic ("sumDataCon: Alts start from 1. (alt: " ++ show alt
+           ++ ", arity: " ++ show arity ++ ")")
+
+  | arity < 2
+  = panic ("sumDataCon: Arity starts from 2. (alt: " ++ show alt
+           ++ ", arity: " ++ show arity ++ ")")
+
+  | arity > mAX_SUM_SIZE
+  = snd (mk_sum arity) ! (alt - 1)  -- Build one specially
+
+  | otherwise
+  = snd (unboxedSumArr ! arity) ! (alt - 1)
+
+-- | Cached type and data constructors for sums. The outer array is
+-- indexed by the arity of the sum and the inner array is indexed by
+-- the alternative.
+unboxedSumArr :: Array Int (TyCon, Array Int DataCon)
+unboxedSumArr = listArray (2,mAX_SUM_SIZE) [mk_sum i | i <- [2..mAX_SUM_SIZE]]
+
+-- | Create type constructor and data constructors for n-ary unboxed sum.
+mk_sum :: Arity -> (TyCon, Array ConTagZ DataCon)
+mk_sum arity = (tycon, sum_cons)
+  where
+    tycon   = mkSumTyCon tc_name tc_binders tc_res_kind (arity * 2) tyvars (elems sum_cons)
+                         UnboxedAlgTyCon
+
+    tc_binders = mkTemplateTyConBinders (nOfThem arity runtimeRepTy)
+                                        (\ks -> map tYPE ks)
+
+    tyvars = mkTemplateTyVars (replicate arity runtimeRepTy ++
+                               map (tYPE . mkTyVarTy) (take arity tyvars))
+
+    tc_res_kind = tYPE unboxedSumRepDataConTy
+
+    open_tvs = drop arity tyvars
+
+    tc_name = mkWiredInName gHC_PRIM (mkSumTyConOcc arity) tc_uniq
+                            (ATyCon tycon) BuiltInSyntax
+
+    sum_cons = listArray (0,arity-1) [sum_con i | i <- [0..arity-1]]
+    sum_con i = let dc = pcDataCon dc_name
+                                   tyvars -- univ tyvars
+                                   [tyvar_tys !! i] -- arg types
+                                   tycon
+
+                    dc_name = mkWiredInName gHC_PRIM
+                                            (mkSumDataConOcc i arity)
+                                            (dc_uniq i)
+                                            (AConLike (RealDataCon dc))
+                                            BuiltInSyntax
+                in dc
+    tyvar_tys = mkTyVarTys open_tvs
+    tc_uniq   = mkSumTyConUnique   arity
+    dc_uniq i = mkSumDataConUnique i arity
+
+{-
+************************************************************************
 *                                                                      *
               Equality types and classes
 *                                                                      *
@@ -866,14 +997,18 @@ mk_class tycon sc_pred sc_sel_id
 *                                                                      *
 ********************************************************************* -}
 
--- For information about the usage of the following type, see Note [TYPE]
--- in module TysPrim
+-- For information about the usage of the following type,
+-- see Note [TYPE and RuntimeRep] in module TysPrim
 runtimeRepTy :: Type
 runtimeRepTy = mkTyConTy runtimeRepTyCon
 
 liftedTypeKindTyCon, starKindTyCon, unicodeStarKindTyCon :: TyCon
 
-   -- See Note [TYPE] in TysPrim
+-- Type syononyms; see Note [TYPE and RuntimeRep] in TysPrim
+-- type Type = tYPE 'PtrRepLifted
+-- type *    = tYPE 'PtrRepLifted
+-- type *    = tYPE 'PtrRepLifted  -- Unicode variant
+
 liftedTypeKindTyCon   = mkSynonymTyCon liftedTypeKindTyConName
                                        [] liftedTypeKind []
                                        (tYPE ptrRepLiftedTy)
@@ -916,7 +1051,7 @@ runtimeRepSimpleDataCons@(ptrRepLiftedDataCon : ptrRepUnliftedDataCon : _)
   = zipWithLazy mk_runtime_rep_dc
     [ PtrRep, PtrRep, VoidRep, IntRep, WordRep, Int64Rep
     , Word64Rep, AddrRep, FloatRep, DoubleRep
-    , panic "unboxed tuple PrimRep" ]
+    , panic "unboxed tuple PrimRep", panic "unboxed sum PrimRep" ]
     runtimeRepSimpleDataConNames
   where
     mk_runtime_rep_dc primrep name
@@ -925,10 +1060,10 @@ runtimeRepSimpleDataCons@(ptrRepLiftedDataCon : ptrRepUnliftedDataCon : _)
 -- See Note [Wiring in RuntimeRep]
 voidRepDataConTy, intRepDataConTy, wordRepDataConTy, int64RepDataConTy,
   word64RepDataConTy, addrRepDataConTy, floatRepDataConTy, doubleRepDataConTy,
-  unboxedTupleRepDataConTy :: Type
+  unboxedTupleRepDataConTy, unboxedSumRepDataConTy :: Type
 [_, _, voidRepDataConTy, intRepDataConTy, wordRepDataConTy, int64RepDataConTy,
    word64RepDataConTy, addrRepDataConTy, floatRepDataConTy, doubleRepDataConTy,
-   unboxedTupleRepDataConTy] = map (mkTyConTy . promoteDataCon)
+   unboxedTupleRepDataConTy, unboxedSumRepDataConTy] = map (mkTyConTy . promoteDataCon)
                                    runtimeRepSimpleDataCons
 
 vecCountTyCon :: TyCon
@@ -1238,6 +1373,16 @@ mkBoxedTupleTy tys = mkTupleTy Boxed tys
 unitTy :: Type
 unitTy = mkTupleTy Boxed []
 
+{- *********************************************************************
+*                                                                      *
+            The sum types
+*                                                                      *
+************************************************************************
+-}
+
+mkSumTy :: [Type] -> Type
+mkSumTy tys = mkTyConApp (sumTyCon (length tys))
+                         (map (getRuntimeRep "mkSumTy") tys ++ tys)
 
 {- *********************************************************************
 *                                                                      *

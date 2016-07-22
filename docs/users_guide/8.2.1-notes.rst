@@ -13,6 +13,7 @@ Highlights
 The highlights since the 8.0 branch are:
 
 - TODO FIXME
+- SCC annotations can now be used for declarations.
 
 Full details
 ------------
@@ -32,7 +33,10 @@ Compiler
 
 - Old profiling flags ``-auto-all``, ``-auto``, and ``-caf-all`` are deprecated
   and their usage provokes a compile-time warning.
-  
+
+- Support for adding cost centres to declarations is added. The same `SCC`
+  syntax can be used, in addition to a new form for specifying the cost centre
+  name. See :ref:`scc-pragma` for examples.
 
 GHCi
 ~~~~
@@ -49,12 +53,17 @@ Template Haskell
   current declaration group when used as in
 
   .. code-block:: none
-  f x = $(addModFinalizer (reify 'x >>= runIO . print) >> [| x |])
+
+      f x = $(addModFinalizer (reify 'x >>= runIO . print) >> [| x |])
 
 Runtime system
 ~~~~~~~~~~~~~~
 
 -  TODO FIXME.
+
+- The :ref:`heap profiler <prof-heap>` can now emit heap census data to the GHC
+  event log, allowing heap profiles to be correlated with other tracing events
+  (see :ghc-ticket:`11094`).
 
 Build system
 ~~~~~~~~~~~~
@@ -88,6 +97,8 @@ base
 See ``changelog.md`` in the ``base`` package for full release notes.
 
 -  Version number 4.10.0.0 (was 4.9.0.0)
+
+- ``Data.Either`` now provides ``fromLeft`` and ``fromRight``
 
 binary
 ~~~~~~

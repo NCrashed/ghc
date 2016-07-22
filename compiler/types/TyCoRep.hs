@@ -2942,10 +2942,16 @@ pprTcApp style to_type p pp tc tys
   = pprPromotionQuote tc <>
     (tupleParens tup_sort $ pprWithCommas (pp TopPrec) ty_args)
 
+  | not (debugStyle style)
+  , isUnboxedSumTyCon tc
+  , let arity = tyConArity tc
+        ty_args = drop (arity `div` 2) tys -- Drop the kind args
+  , tys `lengthIs` arity -- Not a partial application
+  = pprSumApp pp tc ty_args
+
   | otherwise
   = sdocWithDynFlags $ \dflags ->
     pprTcApp_help to_type p pp tc tys dflags style
-  where
 
 pprTupleApp :: TyPrec -> (TyPrec -> a -> SDoc)
             -> TyCon -> TupleSort -> [a] -> SDoc
@@ -2959,6 +2965,11 @@ pprTupleApp p pp tc sort tys
   | otherwise
   = pprPromotionQuote tc <>
     tupleParens sort (pprWithCommas (pp TopPrec) tys)
+
+pprSumApp :: (TyPrec -> a -> SDoc) -> TyCon -> [a] -> SDoc
+pprSumApp pp tc tys
+  = pprPromotionQuote tc <>
+    sumParens (pprWithBars (pp TopPrec) tys)
 
 pprTcApp_help :: (a -> Type) -> TyPrec -> (TyPrec -> a -> SDoc)
               -> TyCon -> [a] -> DynFlags -> PprStyle -> SDoc
@@ -3104,17 +3115,29 @@ ppSuggestExplicitKinds
 --
 -- It doesn't change the uniques at all, just the print names.
 tidyTyCoVarBndrs :: TidyEnv -> [TyCoVar] -> (TidyEnv, [TyCoVar])
-tidyTyCoVarBndrs env tvs = mapAccumL tidyTyCoVarBndr env tvs
+tidyTyCoVarBndrs (occ_env, subst) tvs
+    = mapAccumL tidyTyCoVarBndr tidy_env' tvs
+  where
+    -- Seed the occ_env with clashes among the names, see
+    -- Node [Tidying multiple names at once] in OccName
+    -- Se still go through tidyTyCoVarBndr so that each kind variable is tidied
+    -- with the correct tidy_env
+    occs = map getHelpfulOccName tvs
+    tidy_env' = (avoidClashesOccEnv occ_env occs, subst)
 
 tidyTyCoVarBndr :: TidyEnv -> TyCoVar -> (TidyEnv, TyCoVar)
 tidyTyCoVarBndr tidy_env@(occ_env, subst) tyvar
-  = case tidyOccName occ_env occ1 of
-      (tidy', occ') -> ((tidy', subst'), tyvar')
+  = case tidyOccName occ_env (getHelpfulOccName tyvar) of
+      (occ_env', occ') -> ((occ_env', subst'), tyvar')
         where
           subst' = extendVarEnv subst tyvar tyvar'
           tyvar' = setTyVarKind (setTyVarName tyvar name') kind'
-          name'  = tidyNameOcc name occ'
           kind'  = tidyKind tidy_env (tyVarKind tyvar)
+          name'  = tidyNameOcc name occ'
+          name   = tyVarName tyvar
+
+getHelpfulOccName :: TyCoVar -> OccName
+getHelpfulOccName tyvar = occ1
   where
     name = tyVarName tyvar
     occ  = getOccName name
@@ -3182,12 +3205,28 @@ tidyType env (TyConApp tycon tys) = let args = tidyTypes env tys
                                     in args `seqList` TyConApp tycon args
 tidyType env (AppTy fun arg)      = (AppTy $! (tidyType env fun)) $! (tidyType env arg)
 tidyType env (FunTy fun arg)      = (FunTy $! (tidyType env fun)) $! (tidyType env arg)
-tidyType env (ForAllTy (TvBndr tv vis) ty)
-  = (ForAllTy $! ((TvBndr $! tvp) $! vis)) $! (tidyType envp ty)
+tidyType env (ty@(ForAllTy{}))    = mkForAllTys' (zip tvs' vis) $! tidyType env' body_ty
   where
-    (envp, tvp) = tidyTyCoVarBndr env tv
+    (tvs, vis, body_ty) = splitForAllTys' ty
+    (env', tvs') = tidyTyCoVarBndrs env tvs
 tidyType env (CastTy ty co)       = (CastTy $! tidyType env ty) $! (tidyCo env co)
 tidyType env (CoercionTy co)      = CoercionTy $! (tidyCo env co)
+
+
+-- The following two functions differ from mkForAllTys and splitForAllTys in that
+-- they expect/preserve the ArgFlag argument. Thes belong to types/Type.hs, but
+-- how should they be named?
+mkForAllTys' :: [(TyVar, ArgFlag)] -> Type -> Type
+mkForAllTys' tvvs ty = foldr strictMkForAllTy ty tvvs
+  where
+    strictMkForAllTy (tv,vis) ty = (ForAllTy $! ((TvBndr $! tv) $! vis)) $! ty
+
+splitForAllTys' :: Type -> ([TyVar], [ArgFlag], Type)
+splitForAllTys' ty = go ty [] []
+  where
+    go (ForAllTy (TvBndr tv vis) ty) tvs viss = go ty (tv:tvs) (vis:viss)
+    go ty                            tvs viss = (reverse tvs, reverse viss, ty)
+
 
 ---------------
 -- | Grabs the free type variables, tidies them

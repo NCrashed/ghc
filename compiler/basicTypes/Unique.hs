@@ -44,6 +44,7 @@ module Unique (
         mkAlphaTyVarUnique,
         mkPrimOpIdUnique,
         mkTupleTyConUnique, mkTupleDataConUnique,
+        mkSumTyConUnique, mkSumDataConUnique,
         mkCTupleTyConUnique,
         mkPreludeMiscIdUnique, mkPreludeDataConUnique,
         mkPreludeTyConUnique, mkPreludeClassUnique,
@@ -369,6 +370,34 @@ mkPreludeDataConUnique i              = mkUnique '6' (3*i)    -- Must be alphabe
 mkTupleDataConUnique Boxed          a = mkUnique '7' (3*a)    -- ditto (*may* be used in C labels)
 mkTupleDataConUnique Unboxed        a = mkUnique '8' (3*a)
 
+--------------------------------------------------
+-- Sum arities start from 2. A sum of arity N has N data constructors, so it
+-- occupies N+1 slots: 1 TyCon + N DataCons.
+--
+-- So arity 2 sum takes uniques 0 (tycon), 1, 2  (2 data cons)
+--    arity 3 sum takes uniques 3 (tycon), 4, 5, 6 (3 data cons)
+-- etc.
+
+mkSumTyConUnique :: Arity -> Unique
+mkSumTyConUnique arity = mkUnique 'z' (sumUniqsOccupied arity)
+
+mkSumDataConUnique :: ConTagZ -> Arity -> Unique
+mkSumDataConUnique alt arity
+  | alt >= arity
+  = panic ("mkSumDataConUnique: " ++ show alt ++ " >= " ++ show arity)
+  | otherwise
+  = mkUnique 'z' (sumUniqsOccupied arity + alt + 1 {- skip the tycon -})
+
+-- How many unique slots occupied by sum types (including constructors) up to
+-- the given arity?
+sumUniqsOccupied :: Arity -> Int
+sumUniqsOccupied arity
+  = ASSERT(arity >= 2)
+    -- 3 + 4 + ... + arity
+    ((arity * (arity + 1)) `div` 2) - 3
+{-# INLINE sumUniqsOccupied #-}
+
+--------------------------------------------------
 dataConRepNameUnique, dataConWorkerUnique :: Unique -> Unique
 dataConWorkerUnique  u = incrUnique u
 dataConRepNameUnique u = stepUnique u 2

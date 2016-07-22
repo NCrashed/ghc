@@ -1578,7 +1578,8 @@ statePrimTyConKey, stableNamePrimTyConKey, stableNameTyConKey,
     liftedConKey, unliftedConKey, anyBoxConKey, kindConKey, boxityConKey,
     typeConKey, threadIdPrimTyConKey, bcoPrimTyConKey, ptrTyConKey,
     funPtrTyConKey, tVarPrimTyConKey, eqPrimTyConKey,
-    eqReprPrimTyConKey, eqPhantPrimTyConKey, voidPrimTyConKey :: Unique
+    eqReprPrimTyConKey, eqPhantPrimTyConKey, voidPrimTyConKey,
+    compactPrimTyConKey :: Unique
 statePrimTyConKey                       = mkPreludeTyConUnique 50
 stableNamePrimTyConKey                  = mkPreludeTyConUnique 51
 stableNameTyConKey                      = mkPreludeTyConUnique 52
@@ -1607,6 +1608,7 @@ bcoPrimTyConKey                         = mkPreludeTyConUnique 74
 ptrTyConKey                             = mkPreludeTyConUnique 75
 funPtrTyConKey                          = mkPreludeTyConUnique 76
 tVarPrimTyConKey                        = mkPreludeTyConUnique 77
+compactPrimTyConKey                     = mkPreludeTyConUnique 78
 
 -- Parallel array type constructor
 parrTyConKey :: Unique
@@ -1874,17 +1876,17 @@ runtimeRepSimpleDataConKeys :: [Unique]
 ptrRepLiftedDataConKey, ptrRepUnliftedDataConKey :: Unique
 runtimeRepSimpleDataConKeys@(
   ptrRepLiftedDataConKey : ptrRepUnliftedDataConKey : _)
-  = map mkPreludeDataConUnique [72..82]
+  = map mkPreludeDataConUnique [72..83]
 
 -- See Note [Wiring in RuntimeRep] in TysWiredIn
 -- VecCount
 vecCountDataConKeys :: [Unique]
-vecCountDataConKeys = map mkPreludeDataConUnique [83..88]
+vecCountDataConKeys = map mkPreludeDataConUnique [84..89]
 
 -- See Note [Wiring in RuntimeRep] in TysWiredIn
 -- VecElem
 vecElemDataConKeys :: [Unique]
-vecElemDataConKeys = map mkPreludeDataConUnique [89..98]
+vecElemDataConKeys = map mkPreludeDataConUnique [90..99]
 
 ---------------- Template Haskell -------------------
 --      THNames.hs: USES DataUniques 100-150
@@ -1907,7 +1909,7 @@ wildCardKey, absentErrorIdKey, augmentIdKey, appendIdKey,
     realWorldPrimIdKey, recConErrorIdKey,
     unpackCStringUtf8IdKey, unpackCStringAppendIdKey,
     unpackCStringFoldrIdKey, unpackCStringIdKey,
-    typeErrorIdKey :: Unique
+    typeErrorIdKey, rubbishEntryErrorIdKey :: Unique
 
 wildCardKey                   = mkPreludeMiscIdUnique  0  -- See Note [WildCard binders]
 absentErrorIdKey              = mkPreludeMiscIdUnique  1
@@ -1932,6 +1934,7 @@ unpackCStringFoldrIdKey       = mkPreludeMiscIdUnique 19
 unpackCStringIdKey            = mkPreludeMiscIdUnique 20
 voidPrimIdKey                 = mkPreludeMiscIdUnique 21
 typeErrorIdKey                = mkPreludeMiscIdUnique 22
+rubbishEntryErrorIdKey        = mkPreludeMiscIdUnique 23
 
 unsafeCoerceIdKey, concatIdKey, filterIdKey, zipIdKey, bindIOIdKey,
     returnIOIdKey, newStablePtrIdKey,

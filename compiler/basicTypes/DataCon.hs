@@ -39,7 +39,7 @@ module DataCon (
         dataConInstOrigArgTys, dataConRepArgTys,
         dataConFieldLabels, dataConFieldType,
         dataConSrcBangs,
-        dataConSourceArity, dataConRepArity, dataConRepRepArity,
+        dataConSourceArity, dataConRepArity,
         dataConIsInfix,
         dataConWorkId, dataConWrapId, dataConWrapId_maybe,
         dataConImplicitTyThings,
@@ -49,6 +49,7 @@ module DataCon (
 
         -- ** Predicates on DataCons
         isNullarySrcDataCon, isNullaryRepDataCon, isTupleDataCon, isUnboxedTupleCon,
+        isUnboxedSumCon,
         isVanillaDataCon, classDataCon, dataConCannotMatch,
         isBanged, isMarkedStrict, eqHsBang, isSrcStrict, isSrcUnpacked,
         specialPromotedDc, isLegacyPromotableDataCon, isLegacyPromotableTyCon,
@@ -381,10 +382,10 @@ data DataCon
         -- Constructor representation
         dcRep      :: DataConRep,
 
-        -- Cached
-          -- dcRepArity == length dataConRepArgTys
+        -- Cached; see Note [DataCon arities]
+        -- INVARIANT: dcRepArity    == length dataConRepArgTys
+        -- INVARIANT: dcSourceArity == length dcOrigArgTys
         dcRepArity    :: Arity,
-          -- dcSourceArity == length dcOrigArgTys
         dcSourceArity :: Arity,
 
         -- Result type of constructor is T t1..tn
@@ -426,6 +427,14 @@ Why do we need the TyVarBinders, rather than just the TyVars?  So that
 we can construct the right type for the DataCon with its foralls
 attributed the correce visiblity.  That in turn governs whether you
 can use visible type application at a call of the data constructor.
+
+Note [DataCon arities]
+~~~~~~~~~~~~~~~~~~~~~~
+dcSourceArity does not take constraints into account,
+but dcRepArity does.  For example:
+   MkT :: Ord a => a -> T a
+    dcSourceArity = 1
+    dcRepArity    = 2
 -}
 
 data DataConRep
@@ -977,17 +986,13 @@ dataConSourceArity (MkData { dcSourceArity = arity }) = arity
 dataConRepArity :: DataCon -> Arity
 dataConRepArity (MkData { dcRepArity = arity }) = arity
 
-
--- | The number of fields in the /representation/ of the constructor
--- AFTER taking into account the unpacking of any unboxed tuple fields
-dataConRepRepArity :: DataCon -> RepArity
-dataConRepRepArity dc = typeRepArity (dataConRepArity dc) (dataConRepType dc)
-
 -- | Return whether there are any argument types for this 'DataCon's original source type
+-- See Note [DataCon arities]
 isNullarySrcDataCon :: DataCon -> Bool
-isNullarySrcDataCon dc = null (dcOrigArgTys dc)
+isNullarySrcDataCon dc = dataConSourceArity dc == 0
 
 -- | Return whether there are any argument types for this 'DataCon's runtime representation type
+-- See Note [DataCon arities]
 isNullaryRepDataCon :: DataCon -> Bool
 isNullaryRepDataCon dc = dataConRepArity dc == 0
 
@@ -1163,6 +1168,9 @@ isTupleDataCon (MkData {dcRepTyCon = tc}) = isTupleTyCon tc
 
 isUnboxedTupleCon :: DataCon -> Bool
 isUnboxedTupleCon (MkData {dcRepTyCon = tc}) = isUnboxedTupleTyCon tc
+
+isUnboxedSumCon :: DataCon -> Bool
+isUnboxedSumCon (MkData {dcRepTyCon = tc}) = isUnboxedSumTyCon tc
 
 -- | Vanilla 'DataCon's are those that are nice boring Haskell 98 constructors
 isVanillaDataCon :: DataCon -> Bool
