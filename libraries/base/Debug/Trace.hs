@@ -45,7 +45,6 @@ module Debug.Trace (
 
         -- * Eventlog options
         -- $eventlog_options
-        setEventLogHandle,
         setEventLogCFile,
         getEventLogCFile,
         setEventLogBufferSize,
@@ -55,8 +54,6 @@ module Debug.Trace (
 
 import System.IO 
 import System.IO.Unsafe
-import System.IO.Error
-import System.Posix.Types (Fd(..))
 
 import Foreign (peek)
 import Foreign.C.String
@@ -65,17 +62,11 @@ import Foreign.Marshal.Alloc
 import Foreign.Marshal.Utils (fromBool)
 import GHC.Base
 import qualified GHC.Foreign
-import GHC.IO.Handle (hDuplicate)
-import GHC.IO.Handle.Internals (withHandle', flushWriteBuffer)
-import GHC.IO.Handle.Types (Handle(..), Handle__(..), HandleType(..))
-import GHC.IO.Exception (IOErrorType(..))
-import qualified GHC.IO.FD as FD
 import GHC.Ptr
 import GHC.Real (fromIntegral)
 import GHC.Show
 import GHC.Stack
 import Data.List
-import Data.Typeable (cast)
 
 -- $tracing
 --
@@ -323,9 +314,6 @@ traceMarkerIO msg =
 -- bytes into user specified handler. Thus is very helpful for implementing complex 
 -- tools, for instance remote profilers.
 
-foreign import ccall unsafe "stdio.h fdopen" 
-  fdopen :: Fd -> CString -> IO (Ptr CFile)
-
 foreign import ccall "rts/EventLog.h rts_setEventLogSink" 
   rts_setEventLogSink :: Ptr CFile -> CInt -> CInt -> IO ()
 
@@ -340,44 +328,6 @@ foreign import ccall "rts/EventLog.h rts_getEventLogBuffersSize"
 
 foreign import ccall "rts/EventLog.h rts_getEventLogChunk" 
   rts_getEventLogChunk :: Ptr (Ptr CChar) -> IO CSize
-
--- | The 'setEventLogHandle' function changes current sink of the eventlog, if eventlog
--- profiling is available and enabled at runtime.
---
--- The second parameter defines whether old sink should be finalized and closed or not. 
--- Preserving it could be helpful for temporal redirection of eventlog data into not 
--- standard sink and then restoring to the default file sink.
---
--- The third parameter defines whether new header section should be emitted to the new
--- sink. Emitting header to already started eventlog streams will corrupt the structure 
--- of eventlog format.
-
--- @since 4.10.0.0
-setEventLogHandle :: Handle -> Bool -> Bool -> IO ()
-setEventLogHandle h closePrev emitHeader = withCString "w" $ \iomode -> do 
-  h' <- hDuplicate h -- to prevent closing original handle
-  fd <- handleToFd h'
-  cf <- fdopen fd iomode
-  setEventLogCFile cf closePrev emitHeader
-  where 
-    handleToFd fh@(FileHandle _ m) = withHandle' "handleToFd" fh m $ handleToFd' fh
-    handleToFd fh@(DuplexHandle _ r w) = do 
-      _ <- withHandle' "handleToFd" fh r $ handleToFd' fh
-      withHandle' "handleToFd" fh w $ handleToFd' fh
-
-    handleToFd' :: Handle -> Handle__ -> IO (Handle__, Fd)
-    handleToFd' fh fh_@Handle__{haDevice = hdev} = do
-      case cast hdev of
-        Nothing -> ioError (ioeSetErrorString (mkIOError IllegalOperation
-                                               "handleToFd" (Just fh) Nothing)
-                            "handle is not a file descriptor")
-        Just fd -> do
-         -- converting a Handle into an Fd effectively means
-         -- letting go of the Handle; it is put into a closed
-         -- state as a result.
-         flushWriteBuffer fh_
-         FD.release fd
-         return (fh_ { haType = ClosedHandle }, Fd (FD.fdFD fd))
 
 
 -- | The 'setEventLogCFile' function changes current sink of the eventlog, if eventlog
