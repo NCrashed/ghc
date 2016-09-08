@@ -8,6 +8,10 @@
     `PatSynSigD`), and two new data types (`PatSynDir` and `PatSynArgs`),
     among other changes. (#8761)
 
+  * Add support for unboxed sums. (#12478)
+
+  * Add support for visible type applications. (#12530)
+
 ## 2.11.0.0  *May 2016*
 
   * Bundled with GHC 8.0.1

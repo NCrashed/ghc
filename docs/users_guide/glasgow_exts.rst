@@ -8412,7 +8412,6 @@ Lexically scoped type variables
 
 .. ghc-flag:: -XScopedTypeVariables
 
-    :implies: :ghc-flag:`-XRelaxedPolyRec`
     :implies: :ghc-flag:`-XExplicitForAll`
 
     Enable lexical scoping of type variables explicitly introduced with
@@ -8435,9 +8434,6 @@ scopes over the whole definition of ``f``, including over the type
 signature for ``ys``. In Haskell 98 it is not possible to declare a type
 for ``ys``; a major benefit of scoped type variables is that it becomes
 possible to do so.
-
-Lexically-scoped type variables are enabled by
-:ghc-flag:`-XScopedTypeVariables`. This flag implies :ghc-flag:`-XRelaxedPolyRec`.
 
 Overview
 --------
@@ -8650,64 +8646,6 @@ the Haskell Report) can be completely switched off by
 :ghc-flag:`-XNoMonomorphismRestriction`. Since GHC 7.8.1, the monomorphism
 restriction is switched off by default in GHCi's interactive options
 (see :ref:`ghci-interactive-options`).
-
-.. _typing-binds:
-
-Generalised typing of mutually recursive bindings
--------------------------------------------------
-
-.. ghc-flag:: -XRelaxedPolyRec
-
-    Allow the typechecker to ignore references to bindings with
-    explicit type signatures.
-
-The Haskell Report specifies that a group of bindings (at top level, or
-in a ``let`` or ``where``) should be sorted into strongly-connected
-components, and then type-checked in dependency order
-(`Haskell Report, Section
-4.5.1 <http://www.haskell.org/onlinereport/decls.html#sect4.5.1>`__). As
-each group is type-checked, any binders of the group that have an
-explicit type signature are put in the type environment with the
-specified polymorphic type, and all others are monomorphic until the
-group is generalised (`Haskell Report, Section
-4.5.2 <http://www.haskell.org/onlinereport/decls.html#sect4.5.2>`__).
-
-Following a suggestion of Mark Jones, in his paper `Typing Haskell in
-Haskell <http://citeseer.ist.psu.edu/424440.html>`__, GHC implements a
-more general scheme. If :ghc-flag:`-XRelaxedPolyRec` is specified: *the
-dependency analysis ignores references to variables that have an
-explicit type signature*. As a result of this refined dependency
-analysis, the dependency groups are smaller, and more bindings will
-typecheck. For example, consider: ::
-
-      f :: Eq a => a -> Bool
-      f x = (x == x) || g True || g "Yes"
-
-      g y = (y <= y) || f True
-
-This is rejected by Haskell 98, but under Jones's scheme the definition
-for ``g`` is typechecked first, separately from that for ``f``, because
-the reference to ``f`` in ``g``\'s right hand side is ignored by the
-dependency analysis. Then ``g``\'s type is generalised, to get ::
-
-      g :: Ord a => a -> Bool
-
-Now, the definition for ``f`` is typechecked, with this type for ``g``
-in the type environment.
-
-The same refined dependency analysis also allows the type signatures of
-mutually-recursive functions to have different contexts, something that
-is illegal in Haskell 98 (Section 4.5.2, last sentence). With
-:ghc-flag:`-XRelaxedPolyRec` GHC only insists that the type signatures of a
-*refined* group have identical type signatures; in practice this means
-that only variables bound by the same pattern binding must have the same
-context. For example, this is fine: ::
-
-      f :: Eq a => a -> Bool
-      f x = (x == x) || g True
-
-      g :: Ord a => a -> Bool
-      g y = (y <= y) || f True
 
 .. _mono-local-binds:
 
@@ -9430,13 +9368,21 @@ Here are some more details:
    containing holes, by using the :ghc-flag:`-fdefer-typed-holes` flag. This
    flag defers errors produced by typed holes until runtime, and
    converts them into compile-time warnings. These warnings can in turn
-   be suppressed entirely by :ghc-flag:`-fno-warn-typed-holes`).
+   be suppressed entirely by :ghc-flag:`-fno-warn-typed-holes`.
 
-   The result is that a hole will behave like ``undefined``, but with
+   The same behaviour for "``Variable out of scope``" errors, it terminates
+   compilation by default. You can defer such errors by using the
+   :ghc-flag:`-fdefer-out-of-scope-variables` flag. This flag defers errors
+   produced by out of scope variables until runtime, and
+   converts them into compile-time warnings. These warnings can in turn
+   be suppressed entirely by :ghc-flag:`-fno-warn-deferred-out-of-scope-variables`.
+
+   The result is that a hole or a variable will behave like ``undefined``, but with
    the added benefits that it shows a warning at compile time, and will
    show the same message if it gets evaluated at runtime. This behaviour
    follows that of the :ghc-flag:`-fdefer-type-errors` option, which implies
-   :ghc-flag:`-fdefer-typed-holes`. See :ref:`defer-type-errors`.
+   :ghc-flag:`-fdefer-typed-holes` and :ghc-flag:`-fdefer-out-of-scope-variables`.
+   See :ref:`defer-type-errors`.
 
 -  All unbound identifiers are treated as typed holes, *whether or not
    they start with an underscore*. The only difference is in the error
@@ -9930,12 +9876,13 @@ will not prevent compilation. You can use
 :ghc-flag:`-Wno-deferred-type-errors <-Wdeferred-type-errors>` to suppress these
 warnings.
 
-This flag implies the :ghc-flag:`-fdefer-typed-holes` flag, which enables this
-behaviour for `typed holes <#typed-holes>`__. Should you so wish, it is
+This flag implies the :ghc-flag:`-fdefer-typed-holes` and
+:ghc-flag:`-fdefer-out-of-scope-variables` flags, which enables this
+behaviour for `typed holes <#typed-holes>`__ and variables. Should you so wish, it is
 possible to enable :ghc-flag:`-fdefer-type-errors` without enabling
-:ghc-flag:`-fdefer-typed-holes`, by explicitly specifying
-:ghc-flag:`-fno-defer-typed-holes` on the command-line after the
-:ghc-flag:`-fdefer-type-errors` flag.
+:ghc-flag:`-fdefer-typed-holes` or :ghc-flag:`-fdefer-out-of-scope-variables`,
+by explicitly specifying :ghc-flag:`-fno-defer-typed-holes` or :ghc-flag:`-fno-defer-out-of-scope-variables`
+on the command-line after the :ghc-flag:`-fdefer-type-errors` flag.
 
 At runtime, whenever a term containing a type error would need to be
 evaluated, the error is converted into a runtime exception of type

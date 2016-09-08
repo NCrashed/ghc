@@ -19,7 +19,7 @@ module StgCmmMonad (
 
         emit, emitDecl, emitProc,
         emitProcWithConvention, emitProcWithStackFrame,
-        emitOutOfLine, emitAssign, emitAssign', emitStore,
+        emitOutOfLine, emitAssign, emitStore,
         emitComment, emitTick, emitUnwind,
 
         getCmm, aGraphToGraph,
@@ -76,7 +76,6 @@ import Unique
 import UniqSupply
 import FastString
 import Outputable
-import RepType (typePrimRep)
 
 import Control.Monad
 import Data.List
@@ -219,8 +218,7 @@ instance Outputable CgIdInfo where
 
 -- Sequel tells what to do with the result of this expression
 data Sequel
-  = Return Bool         -- Return result(s) to continuation found on the stack.
-                        -- True <=> the continuation is update code (???)
+  = Return              -- Return result(s) to continuation found on the stack.
 
   | AssignTo
         [LocalReg]      -- Put result(s) in these regs and fall through
@@ -233,7 +231,7 @@ data Sequel
                         -- allocating primOp)
 
 instance Outputable Sequel where
-    ppr (Return b) = text "Return" <+> ppr b
+    ppr Return = text "Return"
     ppr (AssignTo regs b) = text "AssignTo" <+> ppr regs <+> ppr b
 
 -- See Note [sharing continuations] below
@@ -320,7 +318,7 @@ initCgInfoDown dflags mod
                  , cgd_tick_scope= GlobalScope }
 
 initSequel :: Sequel
-initSequel = Return False
+initSequel = Return
 
 initUpdFrameOff :: DynFlags -> UpdFrameOffset
 initUpdFrameOff dflags = widthInBytes (wordWidth dflags) -- space for the RA
@@ -744,14 +742,6 @@ emitUnwind g e = do
 emitAssign :: CmmReg  -> CmmExpr -> FCode ()
 emitAssign l r = emitCgStmt (CgStmt (CmmAssign l r))
 
-emitAssign' :: CmmReg -> CmmArg -> FCode ()
-emitAssign' l (CmmExprArg r) = emitAssign l r
-emitAssign' l (CmmRubbishArg ty)
-  | isGcPtrRep (typePrimRep ty)
-  = emitAssign l rubbishExpr
-  | otherwise
-  = return ()
-
 emitStore :: CmmExpr  -> CmmExpr -> FCode ()
 emitStore l r = emitCgStmt (CgStmt (CmmStore l r))
 
@@ -867,8 +857,8 @@ mkCmmIfThen e tbranch = do
                       , mkLabel tid tscp, tbranch, mkLabel endif tscp ]
 
 
-mkCall :: CmmExpr -> (Convention, Convention) -> [CmmFormal] -> [CmmArg]
-       -> UpdFrameOffset -> [CmmArg] -> FCode CmmAGraph
+mkCall :: CmmExpr -> (Convention, Convention) -> [CmmFormal] -> [CmmExpr]
+       -> UpdFrameOffset -> [CmmExpr] -> FCode CmmAGraph
 mkCall f (callConv, retConv) results actuals updfr_off extra_stack = do
   dflags <- getDynFlags
   k      <- newLabelC
@@ -878,7 +868,7 @@ mkCall f (callConv, retConv) results actuals updfr_off extra_stack = do
       copyout = mkCallReturnsTo dflags f callConv actuals k off updfr_off extra_stack
   return $ catAGraphs [copyout, mkLabel k tscp, copyin]
 
-mkCmmCall :: CmmExpr -> [CmmFormal] -> [CmmArg] -> UpdFrameOffset
+mkCmmCall :: CmmExpr -> [CmmFormal] -> [CmmExpr] -> UpdFrameOffset
           -> FCode CmmAGraph
 mkCmmCall f results actuals updfr_off
    = mkCall f (NativeDirectCall, NativeReturn) results actuals updfr_off []

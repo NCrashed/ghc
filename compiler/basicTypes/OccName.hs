@@ -116,6 +116,7 @@ import FastStringEnv
 import Outputable
 import Lexeme
 import Binary
+import Control.DeepSeq
 import Data.List (mapAccumL)
 import Data.Char
 import Data.Data
@@ -134,7 +135,6 @@ data NameSpace = VarName        -- Variables, including "real" data constructors
                | TcClsName      -- Type constructors and classes; Haskell has them
                                 -- in the same name space for now.
                deriving( Eq, Ord )
-   {-! derive: Binary !-}
 
 -- Note [Data Constructors]
 -- see also: Note [Data Constructor Naming] in DataCon.hs
@@ -227,6 +227,11 @@ demoteNameSpace TcClsName = Just DataName
 ************************************************************************
 -}
 
+-- | Occurrence Name
+--
+-- In this context that means:
+-- "classified (i.e. as a type name, value name, etc) but not qualified
+-- and not yet resolved"
 data OccName = OccName
     { occNameSpace  :: !NameSpace
     , occNameFS     :: !FastString
@@ -248,6 +253,9 @@ instance Data OccName where
 
 instance HasOccName OccName where
   occName = id
+
+instance NFData OccName where
+  rnf x = x `seq` ()
 
 {-
 ************************************************************************

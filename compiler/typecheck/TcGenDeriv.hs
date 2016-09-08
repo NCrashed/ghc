@@ -70,7 +70,6 @@ import Lexeme
 import FastString
 import Pair
 import Bag
-import TcEnv (InstInfo)
 import StaticFlags( opt_PprStyle_Debug )
 
 import ListSetOps ( assocMaybe )
@@ -90,12 +89,11 @@ data AuxBindSpec
 data DerivStuff     -- Please add this auxiliary stuff
   = DerivAuxBind AuxBindSpec
 
-  -- Generics
+  -- Generics and DeriveAnyClass
   | DerivFamInst FamInst               -- New type family instances
 
   -- New top-level auxiliary bindings
   | DerivHsBind (LHsBind RdrName, LSig RdrName) -- Also used for SYB
-  | DerivInst (InstInfo RdrName)                -- New, auxiliary instances
 
 {-
 ************************************************************************
@@ -331,7 +329,7 @@ Several special cases:
   values we can't call the overloaded functions.
   See function unliftedOrdOp
 
-Note [Do not rely on compare]
+Note [Game plan for deriving Ord]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 It's a bad idea to define only 'compare', and build the other binary
 comparisons on top of it; see Trac #2130, #4019.  Reason: we don't
@@ -343,8 +341,16 @@ binary result, something like this:
                                        True  -> False
                                        False -> True
 
+This being said, we can get away with generating full code only for
+'compare' and '<' thus saving us generation of other three operators.
+Other operators can be cheaply expressed through '<':
+a <= b = not $ b < a
+a > b = b < a
+a >= b = not $ a < b
+
 So for sufficiently small types (few constructors, or all nullary)
 we generate all methods; for large ones we just use 'compare'.
+
 -}
 
 data OrdOp = OrdCompare | OrdLT | OrdLE | OrdGE | OrdGT
@@ -397,12 +403,20 @@ gen_Ord_binds loc tycon
     aux_binds | single_con_type = emptyBag
               | otherwise       = unitBag $ DerivAuxBind $ DerivCon2Tag tycon
 
-        -- Note [Do not rely on compare]
+        -- Note [Game plan for deriving Ord]
     other_ops | (last_tag - first_tag) <= 2     -- 1-3 constructors
                 || null non_nullary_cons        -- Or it's an enumeration
-              = listToBag (map mkOrdOp [OrdLT,OrdLE,OrdGE,OrdGT])
+              = listToBag [mkOrdOp OrdLT, lE, gT, gE]
               | otherwise
               = emptyBag
+
+    negate_expr = nlHsApp (nlHsVar not_RDR)
+    lE = mk_easy_FunBind loc le_RDR [a_Pat, b_Pat] $
+        negate_expr (nlHsApp (nlHsApp (nlHsVar lt_RDR) b_Expr) a_Expr)
+    gT = mk_easy_FunBind loc gt_RDR [a_Pat, b_Pat] $
+        nlHsApp (nlHsApp (nlHsVar lt_RDR) b_Expr) a_Expr
+    gE = mk_easy_FunBind loc ge_RDR [a_Pat, b_Pat] $
+        negate_expr (nlHsApp (nlHsApp (nlHsVar lt_RDR) a_Expr) b_Expr)
 
     get_tag con = dataConTag con - fIRST_TAG
         -- We want *zero-based* tags, because that's what
@@ -2199,7 +2213,7 @@ coercing from.  So from, say,
          ) :: a -> [T x] -> Int
 
 Notice that we give the 'coerce' call two type signatures: one to
-fix the of the inner call, and one for the expected type.  The outer
+fix the type of the inner call, and one for the expected type.  The outer
 type signature ought to be redundant, but may improve error messages.
 The inner one is essential to fix the type at which 'op' is called.
 
@@ -2346,11 +2360,11 @@ genAuxBindSpec loc (DerivMaxTag tycon)
     max_tag =  case (tyConDataCons tycon) of
                  data_cons -> toInteger ((length data_cons) - fIRST_TAG)
 
-type SeparateBagsDerivStuff = -- AuxBinds and SYB bindings
-                              ( Bag (LHsBind RdrName, LSig RdrName)
-                                -- Extra bindings (used by Generic only)
-                              , Bag (FamInst)           -- Extra family instances
-                              , Bag (InstInfo RdrName)) -- Extra instances
+type SeparateBagsDerivStuff =
+  -- AuxBinds and SYB bindings
+  ( Bag (LHsBind RdrName, LSig RdrName)
+  -- Extra family instances (used by Generic and DeriveAnyClass)
+  , Bag (FamInst) )
 
 genAuxBinds :: SrcSpan -> BagDerivStuff -> SeparateBagsDerivStuff
 genAuxBinds loc b = genAuxBinds' b2 where
@@ -2363,16 +2377,14 @@ genAuxBinds loc b = genAuxBinds' b2 where
 
   genAuxBinds' :: BagDerivStuff -> SeparateBagsDerivStuff
   genAuxBinds' = foldrBag f ( mapBag (genAuxBindSpec loc) (rm_dups b1)
-                            , emptyBag, emptyBag)
+                            , emptyBag )
   f :: DerivStuff -> SeparateBagsDerivStuff -> SeparateBagsDerivStuff
   f (DerivAuxBind _) = panic "genAuxBinds'" -- We have removed these before
   f (DerivHsBind  b) = add1 b
   f (DerivFamInst t) = add2 t
-  f (DerivInst    i) = add3 i
 
-  add1 x (a,b,c) = (x `consBag` a,b,c)
-  add2 x (a,b,c) = (a,x `consBag` b,c)
-  add3 x (a,b,c) = (a,b,x `consBag` c)
+  add1 x (a,b) = (x `consBag` a,b)
+  add2 x (a,b) = (a,x `consBag` b)
 
 mkParentType :: TyCon -> Type
 -- Turn the representation tycon of a family into
@@ -2626,11 +2638,11 @@ as_RDRs         = [ mkVarUnqual (mkFastString ("a"++show i)) | i <- [(1::Int) ..
 bs_RDRs         = [ mkVarUnqual (mkFastString ("b"++show i)) | i <- [(1::Int) .. ] ]
 cs_RDRs         = [ mkVarUnqual (mkFastString ("c"++show i)) | i <- [(1::Int) .. ] ]
 
-a_Expr, c_Expr, f_Expr, z_Expr, ltTag_Expr, eqTag_Expr, gtTag_Expr,
+a_Expr, b_Expr, c_Expr, f_Expr, z_Expr, ltTag_Expr, eqTag_Expr, gtTag_Expr,
     false_Expr, true_Expr, fmap_Expr,
     mempty_Expr, foldMap_Expr, traverse_Expr :: LHsExpr RdrName
 a_Expr          = nlHsVar a_RDR
--- b_Expr       = nlHsVar b_RDR
+b_Expr          = nlHsVar b_RDR
 c_Expr          = nlHsVar c_RDR
 f_Expr          = nlHsVar f_RDR
 z_Expr          = nlHsVar z_RDR

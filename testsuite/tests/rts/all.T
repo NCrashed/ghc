@@ -267,7 +267,7 @@ test('T9078', only_ways(['threaded1']), compile_and_run, [''])
 test('T10017', [ when(opsys('mingw32'), skip)
                , only_ways(threaded_ways), extra_run_opts('+RTS -N2 -RTS') ], compile_and_run, [''])
 
-test('T11108', expect_broken_for(11108, ['ghci', 'hpc']), compile_and_run, [''])
+test('T11108', normal, compile_and_run, [''])
 
 test('rdynamic', [ unless(opsys('linux') or opsys('mingw32'), skip)
                  # this needs runtime infrastructure to do in ghci:
@@ -365,3 +365,8 @@ test('T10296b', [only_ways('threaded2')], compile_and_run, [''])
 
 test('numa001', [ extra_run_opts('8'), extra_ways(['debug_numa']) ]
                 , compile_and_run, [''])
+                
+test('T12497', [ unless(opsys('mingw32'), skip)
+               ],
+               run_command, ['$MAKE -s --no-print-directory T12497'])
+

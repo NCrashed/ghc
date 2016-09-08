@@ -987,7 +987,12 @@ callishMachOps = listToUFM $
         ( "popcnt8",  (,) $ MO_PopCnt W8  ),
         ( "popcnt16", (,) $ MO_PopCnt W16 ),
         ( "popcnt32", (,) $ MO_PopCnt W32 ),
-        ( "popcnt64", (,) $ MO_PopCnt W64 )
+        ( "popcnt64", (,) $ MO_PopCnt W64 ),
+
+        ( "cmpxchg8",  (,) $ MO_Cmpxchg W8  ),
+        ( "cmpxchg16", (,) $ MO_Cmpxchg W16 ),
+        ( "cmpxchg32", (,) $ MO_Cmpxchg W32 ),
+        ( "cmpxchg64", (,) $ MO_Cmpxchg W64 )
 
         -- ToDo: the rest, maybe
         -- edit: which rest?
@@ -1100,7 +1105,7 @@ pushStackFrame fields body = do
   exprs <- sequence fields
   updfr_off <- getUpdFrameOff
   let (new_updfr_off, _, g) = copyOutOflow dflags NativeReturn Ret Old
-                                           [] updfr_off (map CmmExprArg exprs)
+                                           [] updfr_off exprs
   emit g
   withUpdFrameOff new_updfr_off body
 
@@ -1171,7 +1176,7 @@ doReturn exprs_code = do
 
 mkReturnSimple  :: DynFlags -> [CmmActual] -> UpdFrameOffset -> CmmAGraph
 mkReturnSimple dflags actuals updfr_off =
-  mkReturn dflags e (map CmmExprArg actuals) updfr_off
+  mkReturn dflags e actuals updfr_off
   where e = entryCode dflags (CmmLoad (CmmStackSlot Old updfr_off)
                              (gcWord dflags))
 
@@ -1190,7 +1195,7 @@ doJumpWithStack expr_code stk_code args_code = do
   stk_args <- sequence stk_code
   args <- sequence args_code
   updfr_off <- getUpdFrameOff
-  emit (mkJumpExtra dflags NativeNodeCall expr (map CmmExprArg args) updfr_off (map CmmExprArg stk_args))
+  emit (mkJumpExtra dflags NativeNodeCall expr args updfr_off stk_args)
 
 doCall :: CmmParse CmmExpr -> [CmmParse LocalReg] -> [CmmParse CmmExpr]
        -> CmmParse ()
@@ -1200,7 +1205,7 @@ doCall expr_code res_code args_code = do
   args <- sequence args_code
   ress <- sequence res_code
   updfr_off <- getUpdFrameOff
-  c <- code $ mkCall expr (NativeNodeCall,NativeReturn) ress (map CmmExprArg args) updfr_off []
+  c <- code $ mkCall expr (NativeNodeCall,NativeReturn) ress args updfr_off []
   emit c
 
 adjCallTarget :: DynFlags -> CCallConv -> CmmExpr -> [(CmmExpr, ForeignHint) ]

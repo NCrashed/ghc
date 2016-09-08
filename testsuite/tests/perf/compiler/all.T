@@ -28,7 +28,8 @@ setTestOpts(no_lint)
 #    really changed, then you know there's an issue.
 
 test('T1969',
-     [compiler_stats_num_field('peak_megabytes_allocated', # Note [residency]
+     [expect_broken(12437),
+      compiler_stats_num_field('peak_megabytes_allocated', # Note [residency]
           [(wordsize(32), 30, 15),
              # 2010-05-17 14 (x86/Windows)
              #            15 (x86/OS X)
@@ -427,8 +428,9 @@ test('T5631',
 test('parsing001',
      [compiler_stats_num_field('bytes allocated',
           [(wordsize(32), 274000576, 10),
-           (wordsize(64), 587079016, 5)]),
+           (wordsize(64), 581551384, 5)]),
         # expected value: 587079016 (amd64/Linux)
+        # 2016-09-01:     581551384 (amd64/Linux) Restore w/w limit (#11565)
        only_ways(['normal']),
       ],
      compile_fail, [''])
@@ -552,7 +554,7 @@ test('T5642',
             # 2014-12-10:  641085256 Improvements in constraints solver
             # 2016-04-06:  462677300
 
-            (wordsize(64),  916484672, 10)])
+            (wordsize(64),  838316496, 10)])
             # prev:        1300000000
             # 2014-07-17:  1358833928 (general round of updates)
             # 2014-08-07:  1402242360 (caused by 1fc60ea)
@@ -568,6 +570,7 @@ test('T5642',
             # 2016-02-08:   950004816 Pattern match checker re-rework
             # 2016-05-12:  1300685592 Make Generic1 poly-kinded
             # 2016-06-05:   916484672 Refactor derived Generic instances to reduce allocations
+            # 2016-09-03:   838316496 Derive the Generic instance in perf/compiler/T5642
       ],
       compile,['-O'])
 
@@ -664,7 +667,7 @@ test('T9675',
           # 2016-04-06    18043224   (x86/Linux, 64-bit machine)
           ]),
        compiler_stats_num_field('peak_megabytes_allocated', # Note [residency]
-          [(wordsize(64), 144, 15),
+          [(wordsize(64), 121, 15),
           # 2014-10-13    66
           # 2014-10-13    58         seq the DmdEnv in seqDmdType as well
           # 2014-10-13    49         different machines giving different results...
@@ -674,6 +677,7 @@ test('T9675',
           # 2015-12-04    88         new pattern checker (D1535)
           # 2015-12-11    113        TypeInType (see #11196)
           # 2016-04-14    144        Final demand analyzer run
+          # 2016-07-26    121        Unboxed sums?
             (wordsize(32), 56, 15)
           # 2015-07-11    56         (x86/Linux, 64-bit machine) use +RTS -G1
           ]),
@@ -765,7 +769,7 @@ test('T9872d',
 test('T9961',
      [ only_ways(['normal']),
        compiler_stats_num_field('bytes allocated',
-          [(wordsize(64), 568526784, 5),
+          [(wordsize(64), 537297968, 5),
           # 2015-01-12    807117816   Initally created
           # 2015-spring   772510192   Got better
           # 2015-05-22    663978160   Fix for #10370 improves it more
@@ -773,6 +777,7 @@ test('T9961',
           # 2015-12-17    745044392   x86_64/Darwin  Creep upwards
           # 2016-03-20    519436672   x64_64/Linux   Don't use build desugaring for large lists (#11707)
           # 2016-03-24    568526784   x64_64/Linux   Add eqInt* variants (#11688)
+          # 2016-09-01    537297968   x64_64/Linux   Restore w/w limit (#11565)
            (wordsize(32), 275264188, 5)
           # was           375647160
           # 2016-04-06    275264188   x86/Linux
@@ -799,17 +804,25 @@ test('T9233',
 test('T10370',
      [ only_ways(['optasm']),
        compiler_stats_num_field('max_bytes_used', # Note [residency]
-          [(wordsize(64), 28256896, 15),
+          [(wordsize(64), 33049168, 15),
           # 2015-10-22    19548720
           # 2016-02-24    22823976   Changing Levity to RuntimeRep; not sure why this regresses though, even after some analysis
           # 2016-04-14    28256896   final demand analyzer run
+          # 2016-08-08    33049304
+          #     This change happened because we changed the behavior
+          #     of inlining across hs-boot files, so that we don't
+          #     inline if something comes from a boot file.  This
+          #     affected stats on bootstrapped GHC.  However,
+          #     when I set -i0.01 with profiling, the heap profiles
+          #     were identical, so I think it's just GC noise.
            (wordsize(32), 11371496, 15),
           # 2015-10-22    11371496
           ]),
        compiler_stats_num_field('peak_megabytes_allocated', # Note [residency]
-          [(wordsize(64), 101, 15),
+          [(wordsize(64), 121, 15),
           # 2015-10-22     76
           # 2016-04-14    101 final demand analyzer run
+          # 2016-08-08    121 see above
            (wordsize(32),  39, 15),
           # 2015-10-22     39
           ]),
@@ -831,7 +844,7 @@ test('T12227',
      [ only_ways(['normal']),
        compiler_stats_num_field('bytes allocated',
           [(wordsize(64), 1822822016, 5),
-          # 2016-07-11    5650186880 (Windows) before fix for #12227 
+          # 2016-07-11    5650186880 (Windows) before fix for #12227
           # 2016-07-11    1822822016 (Windows) after fix for #12227
           ]),
      ],

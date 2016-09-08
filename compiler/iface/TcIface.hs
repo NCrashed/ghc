@@ -107,14 +107,46 @@ we do things similarly as when we are typechecking source decls: we
 bring into scope the type envt for the interface all at once, using a
 knot.  Remember, the decls aren't necessarily in dependency order --
 and even if they were, the type decls might be mutually recursive.
+
+Note [Knot-tying typecheckIface]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Suppose we are typechecking an interface A.hi, and we come across
+a Name for another entity defined in A.hi.  How do we get the
+'TyCon', in this case?  There are three cases:
+
+    1) tcHiBootIface in TcIface: We're typechecking an hi-boot file in
+    preparation of checking if the hs file we're building
+    is compatible.  In this case, we want all of the internal
+    TyCons to MATCH the ones that we just constructed during
+    typechecking: the knot is thus tied through if_rec_types.
+
+    2) retypecheckLoop in GhcMake: We are retypechecking a
+    mutually recursive cluster of hi files, in order to ensure
+    that all of the references refer to each other correctly.
+    In this case, the knot is tied through the HPT passed in,
+    which contains all of the interfaces we are in the process
+    of typechecking.
+
+    3) genModDetails in HscMain: We are typechecking an
+    old interface to generate the ModDetails.  In this case,
+    we do the same thing as (2) and pass in an HPT with
+    the HomeModInfo being generated to tie knots.
+
+The upshot is that the CLIENT of this function is responsible
+for making sure that the knot is tied correctly.  If you don't,
+then you'll get a message saying that we couldn't load the
+declaration you wanted.
+
+BTW, in one-shot mode we never call typecheckIface; instead,
+loadInterface handles type-checking interface.  In that case,
+knots are tied through the EPS.  No problem!
 -}
 
+-- Clients of this function be careful, see Note [Knot-tying typecheckIface]
 typecheckIface :: ModIface      -- Get the decls from here
-               -> TcRnIf gbl lcl ModDetails
+               -> IfG ModDetails
 typecheckIface iface
-  = initIfaceTc iface $ \ tc_env_var -> do
-        -- The tc_env_var is freshly allocated, private to
-        -- type-checking this particular interface
+  = initIfaceLcl (mi_module iface) (text "typecheckIface") (mi_boot iface) $ do
         {       -- Get the right set of decls and rules.  If we are compiling without -O
                 -- we discard pragmas before typechecking, so that we don't "see"
                 -- information that we shouldn't.  From a versioning point of view
@@ -123,12 +155,10 @@ typecheckIface iface
           ignore_prags <- goptM Opt_IgnoreInterfacePragmas
 
                 -- Typecheck the decls.  This is done lazily, so that the knot-tying
-                -- within this single module work out right.  In the If monad there is
-                -- no global envt for the current interface; instead, the knot is tied
-                -- through the if_rec_types field of IfGblEnv
+                -- within this single module works out right.  It's the callers
+                -- job to make sure the knot is tied.
         ; names_w_things <- loadDecls ignore_prags (mi_decls iface)
         ; let type_env = mkNameEnv names_w_things
-        ; writeMutVar tc_env_var type_env
 
                 -- Now do those rules, instances and annotations
         ; insts     <- mapM tcIfaceInst (mi_insts iface)
@@ -191,7 +221,7 @@ tcHiBootIface hsc_src mod
           then do { hpt <- getHpt
                  ; case lookupHpt hpt (moduleName mod) of
                       Just info | mi_boot (hm_iface info)
-                                -> return (mkSelfBootInfo (hm_details info))
+                                -> mkSelfBootInfo (hm_iface info) (hm_details info)
                       _ -> return NoSelfBoot }
           else do
 
@@ -204,8 +234,8 @@ tcHiBootIface hsc_src mod
                                 True    -- Hi-boot file
 
         ; case read_result of {
-            Succeeded (iface, _path) -> do { tc_iface <- typecheckIface iface
-                                           ; return (mkSelfBootInfo tc_iface) } ;
+            Succeeded (iface, _path) -> do { tc_iface <- initIfaceTcRn $ typecheckIface iface
+                                           ; mkSelfBootInfo iface tc_iface } ;
             Failed err               ->
 
         -- There was no hi-boot file. But if there is circularity in
@@ -237,13 +267,28 @@ tcHiBootIface hsc_src mod
                           quotes (ppr mod) <> colon) 4 err
 
 
-mkSelfBootInfo :: ModDetails -> SelfBootInfo
-mkSelfBootInfo mds
-  = SelfBoot { sb_mds = mds
-             , sb_tcs = mkNameSet (map tyConName (typeEnvTyCons iface_env))
-             , sb_ids = mkNameSet (map idName (typeEnvIds iface_env)) }
+mkSelfBootInfo :: ModIface -> ModDetails -> TcRn SelfBootInfo
+mkSelfBootInfo iface mds
+  = do -- NB: This is computed DIRECTLY from the ModIface rather
+       -- than from the ModDetails, so that we can query 'sb_tcs'
+       -- WITHOUT forcing the contents of the interface.
+       tcs <- mapM (lookupOrig (mi_module iface) . ifName)
+            . filter isIfaceTyCon
+            . map snd
+            $ mi_decls iface
+       return $ SelfBoot { sb_mds = mds
+                         , sb_tcs = mkNameSet tcs }
   where
-    iface_env = md_types mds
+    -- | Retuerns @True@ if, when you call 'tcIfaceDecl' on
+    -- this 'IfaceDecl', an ATyCon would be returned.
+    -- NB: This code assumes that a TyCon cannot be implicit.
+    isIfaceTyCon IfaceId{}      = False
+    isIfaceTyCon IfaceData{}    = True
+    isIfaceTyCon IfaceSynonym{} = True
+    isIfaceTyCon IfaceFamily{}  = True
+    isIfaceTyCon IfaceClass{}   = True
+    isIfaceTyCon IfaceAxiom{}   = False
+    isIfaceTyCon IfacePatSyn{}  = False
 
 {-
 ************************************************************************
@@ -1196,16 +1241,18 @@ tcIdDetails _ (IfRecSelId tc naughty)
     tyThingPatSyn _ = panic "tcIdDetails: expecting patsyn"
 
 tcIdInfo :: Bool -> Name -> Type -> IfaceIdInfo -> IfL IdInfo
-tcIdInfo ignore_prags name ty info
-  | ignore_prags = return vanillaIdInfo
-  | otherwise    = case info of
-                        NoInfo       -> return vanillaIdInfo
-                        HasInfo info -> foldlM tcPrag init_info info
-  where
+tcIdInfo ignore_prags name ty info = do
+    lcl_env <- getLclEnv
     -- Set the CgInfo to something sensible but uninformative before
     -- we start; default assumption is that it has CAFs
-    init_info = vanillaIdInfo
-
+    let init_info | if_boot lcl_env = vanillaIdInfo `setUnfoldingInfo` BootUnfolding
+                  | otherwise       = vanillaIdInfo
+    if ignore_prags
+        then return init_info
+        else case info of
+                NoInfo -> return init_info
+                HasInfo info -> foldlM tcPrag init_info info
+  where
     tcPrag :: IdInfo -> IfaceInfoItem -> IfL IdInfo
     tcPrag info HsNoCafRefs        = return (info `setCafInfo`   NoCafRefs)
     tcPrag info (HsArity arity)    = return (info `setArityInfo` arity)
@@ -1217,7 +1264,7 @@ tcIdInfo ignore_prags name ty info
       = do { unf <- tcUnfolding name ty info if_unf
            ; let info1 | lb        = info `setOccInfo` strongLoopBreaker
                        | otherwise = info
-           ; return (info1 `setUnfoldingInfoLazily` unf) }
+           ; return (info1 `setUnfoldingInfo` unf) }
 
 tcUnfolding :: Name -> Type -> IdInfo -> IfaceUnfolding -> IfL Unfolding
 tcUnfolding name _ info (IfCoreUnfold stable if_expr)
@@ -1363,19 +1410,21 @@ ifKnotErr name env_doc type_env = vcat
 
 -- Note [Tying the knot]
 -- ~~~~~~~~~~~~~~~~~~~~~
--- The if_rec_types field is used in two situations:
+-- The if_rec_types field is used when we are compiling M.hs, which indirectly
+-- imports Foo.hi, which mentions M.T Then we look up M.T in M's type
+-- environment, which is splatted into if_rec_types after we've built M's type
+-- envt.
 --
--- a) Compiling M.hs, which indirectly imports Foo.hi, which mentions M.T
---    Then we look up M.T in M's type environment, which is splatted into if_rec_types
---    after we've built M's type envt.
+-- This is a dark and complicated part of GHC type checking, with a lot
+-- of moving parts.  Interested readers should also look at:
 --
--- b) In ghc --make, during the upsweep, we encounter M.hs, whose interface M.hi
---    is up to date.  So we call typecheckIface on M.hi.  This splats M.T into
---    if_rec_types so that the (lazily typechecked) decls see all the other decls
+--      * Note [Knot-tying typecheckIface]
+--      * Note [DFun knot-tying]
+--      * Note [hsc_type_env_var hack]
 --
--- In case (b) it's important to do the if_rec_types check *before* looking in the HPT
--- Because if M.hs also has M.hs-boot, M.T will *already be* in the HPT, but in its
--- emasculated form (e.g. lacking data constructors).
+-- There is also a wiki page on the subject, see:
+--
+--      https://ghc.haskell.org/trac/ghc/wiki/Commentary/Compiler/TyingTheKnot
 
 tcIfaceTyConByName :: IfExtName -> IfL TyCon
 tcIfaceTyConByName name

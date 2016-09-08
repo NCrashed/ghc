@@ -188,6 +188,7 @@ import DataCon
 import FastString (FastString, mkFastString)
 import Id
 import Literal (Literal (..))
+import MkCore (aBSENT_ERROR_ID)
 import MkId (voidPrimId, voidArgId)
 import MonadUtils (mapAccumLM)
 import Outputable
@@ -241,10 +242,10 @@ instance Outputable UnariseVal where
 -- | Extend the environment, checking the UnariseEnv invariant.
 extendRho :: UnariseEnv -> Id -> UnariseVal -> UnariseEnv
 extendRho rho x (MultiVal args)
-  = ASSERT (all (isNvUnaryType . stgArgType) args)
+  = ASSERT(all (isNvUnaryType . stgArgType) args)
     extendVarEnv rho x (MultiVal args)
 extendRho rho x (UnaryVal val)
-  = ASSERT (isNvUnaryType (stgArgType val))
+  = ASSERT(isNvUnaryType (stgArgType val))
     extendVarEnv rho x (UnaryVal val)
 
 --------------------------------------------------------------------------------
@@ -273,7 +274,7 @@ unariseRhs rho (StgRhsClosure ccs b_info fvs update_flag args expr)
        return (StgRhsClosure ccs b_info fvs' update_flag args1 expr')
 
 unariseRhs rho (StgRhsCon ccs con args)
-  = ASSERT (not (isUnboxedTupleCon con || isUnboxedSumCon con))
+  = ASSERT(not (isUnboxedTupleCon con || isUnboxedSumCon con))
     return (StgRhsCon ccs con (unariseConArgs rho args))
 
 --------------------------------------------------------------------------------
@@ -288,8 +289,6 @@ unariseExpr rho e@(StgApp f [])
         -> return (StgApp f' [])
       Just (UnaryVal (StgLitArg f'))
         -> return (StgLit f')
-      Just (UnaryVal arg@(StgRubbishArg {}))
-        -> pprPanic "unariseExpr - app1" (ppr e $$ ppr arg)
       Nothing
         -> return e
 
@@ -356,7 +355,7 @@ unariseMulti_maybe rho dc args ty_args
   = Just (unariseConArgs rho args)
 
   | isUnboxedSumCon dc
-  , let args1 = ASSERT (isSingleton args) (unariseConArgs rho args)
+  , let args1 = ASSERT(isSingleton args) (unariseConArgs rho args)
   = Just (mkUbxSum dc ty_args args1)
 
   | otherwise
@@ -374,7 +373,7 @@ elimCase rho args bndr (MultiValAlt _) [(_, bndrs, rhs)]
              | isUnboxedTupleBndr bndr
              = mapTupleIdBinders bndrs args rho1
              | otherwise
-             = ASSERT (isUnboxedSumBndr bndr)
+             = ASSERT(isUnboxedSumBndr bndr)
                if null bndrs then rho1
                              else mapSumIdBinders bndrs args rho1
 
@@ -389,7 +388,6 @@ elimCase rho args bndr (MultiValAlt _) alts
            scrut' = case tag_arg of
                       StgVarArg v     -> StgApp v []
                       StgLitArg l     -> StgLit l
-                      StgRubbishArg _ -> pprPanic "unariseExpr" (ppr args)
 
        alts' <- unariseSumAlts rho1 real_args alts
        return (StgCase scrut' tag_bndr tagAltTy alts')
@@ -480,7 +478,7 @@ mapTupleIdBinders
   -> UnariseEnv
   -> UnariseEnv
 mapTupleIdBinders ids args0 rho0
-  = ASSERT (not (any (isVoidTy . stgArgType) args0))
+  = ASSERT(not (any (isVoidTy . stgArgType) args0))
     let
       ids_unarised :: [(Id, RepType)]
       ids_unarised = map (\id -> (id, repType (idType id))) ids
@@ -498,7 +496,7 @@ mapTupleIdBinders ids args0 rho0
             | isMultiRep x_rep
             = extendRho rho x (MultiVal x_args)
             | otherwise
-            = ASSERT (x_args `lengthIs` 1)
+            = ASSERT(x_args `lengthIs` 1)
               extendRho rho x (UnaryVal (head x_args))
         in
           map_ids rho' xs args'
@@ -514,7 +512,7 @@ mapSumIdBinders
   -> UnariseEnv
 
 mapSumIdBinders [id] args rho0
-  = ASSERT (not (any (isVoidTy . stgArgType) args))
+  = ASSERT(not (any (isVoidTy . stgArgType) args))
     let
       arg_slots = concatMap (repTypeSlots . repType . stgArgType) args
       id_slots  = repTypeSlots (repType (idType id))
@@ -561,7 +559,14 @@ mkUbxSum dc ty_args args0
         | Just stg_arg <- IM.lookup arg_idx arg_map
         = stg_arg : mkTupArgs (arg_idx + 1) slots_left arg_map
         | otherwise
-        = StgRubbishArg (slotTyToType slot) : mkTupArgs (arg_idx + 1) slots_left arg_map
+        = slotRubbishArg slot : mkTupArgs (arg_idx + 1) slots_left arg_map
+
+      slotRubbishArg :: SlotTy -> StgArg
+      slotRubbishArg PtrSlot    = StgVarArg aBSENT_ERROR_ID
+      slotRubbishArg WordSlot   = StgLitArg (MachWord 0)
+      slotRubbishArg Word64Slot = StgLitArg (MachWord64 0)
+      slotRubbishArg FloatSlot  = StgLitArg (MachFloat 0)
+      slotRubbishArg DoubleSlot = StgLitArg (MachDouble 0)
     in
       tag_arg : mkTupArgs 0 sum_slots arg_idxs
 
@@ -659,7 +664,7 @@ unariseConArg :: UnariseEnv -> InStgArg -> [OutStgArg]
 unariseConArg rho (StgVarArg x) =
   case lookupVarEnv rho x of
     Just (UnaryVal arg) -> [arg]
-    Just (MultiVal as) -> as       -- 'as' can be empty
+    Just (MultiVal as) -> as      -- 'as' can be empty
     Nothing
       | isVoidTy (idType x) -> [] -- e.g. C realWorld#
                                   -- Here realWorld# is not in the envt, but

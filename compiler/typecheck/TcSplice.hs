@@ -962,16 +962,12 @@ addModFinalizerRef finRef = do
         pprPanic "addModFinalizer was called when no finalizers were collected"
                  (ppr th_stage)
 
--- | Run all module finalizers
+-- | Releases the external interpreter state.
 finishTH :: TcM ()
 finishTH = do
-  tcg <- getGblEnv
-  let th_modfinalizers_var = tcg_th_modfinalizers tcg
-  modfinalizers <- readTcRef th_modfinalizers_var
-  writeTcRef th_modfinalizers_var []
-  sequence_ modfinalizers
   dflags <- getDynFlags
-  when (gopt Opt_ExternalInterpreter dflags) $
+  when (gopt Opt_ExternalInterpreter dflags) $ do
+    tcg <- getGblEnv
     writeTcRef (tcg_th_remote_state tcg) Nothing
 
 runTHExp :: ForeignHValue -> TcM TH.Exp
@@ -1262,7 +1258,7 @@ lookupThName_maybe th_name
         ; return (listToMaybe names) }
   where
     lookup rdr_name
-        = do {  -- Repeat much of lookupOccRn, becase we want
+        = do {  -- Repeat much of lookupOccRn, because we want
                 -- to report errors in a TH-relevant way
              ; rdr_env <- getLocalRdrEnv
              ; case lookupLocalRdrEnv rdr_env rdr_name of
@@ -1819,7 +1815,8 @@ reify_tc_app tc tys
     tc_binders  = tyConBinders tc
     tc_res_kind = tyConResKind tc
 
-    r_tc | isUnboxedTupleTyCon tc         = TH.UnboxedTupleT (arity `div` 2)
+    r_tc | isUnboxedSumTyCon tc           = TH.UnboxedSumT (arity `div` 2)
+         | isUnboxedTupleTyCon tc         = TH.UnboxedTupleT (arity `div` 2)
              -- See Note [Unboxed tuple RuntimeRep vars] in TyCon
          | isTupleTyCon tc                = if isPromotedDataCon tc
                                             then TH.PromotedTupleT arity

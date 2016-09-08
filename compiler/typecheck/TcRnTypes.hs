@@ -142,7 +142,7 @@ import Coercion ( Coercion, mkHoleCo )
 import ConLike  ( ConLike(..) )
 import DataCon  ( DataCon, dataConUserType, dataConOrigArgTys )
 import PatSyn   ( PatSyn, pprPatSynType )
-import Id       ( idType )
+import Id       ( idType, idName )
 import FieldLabel ( FieldLabel )
 import TcType
 import Annotations
@@ -262,6 +262,7 @@ data IfGblEnv
         -- was originally a hi-boot file.
         -- We need the module name so we can test when it's appropriate
         -- to look in this env.
+        -- See Note [Tying the knot] in TcIface
         if_rec_types :: Maybe (Module, IfG TypeEnv)
                 -- Allows a read effect, so it can be in a mutable
                 -- variable; c.f. handling the external package type env
@@ -274,6 +275,11 @@ data IfLclEnv
         -- So if we see   f = \x -> x
         -- it means M.f = \x -> x, where M is the if_mod
         if_mod :: Module,
+
+        -- Whether or not the IfaceDecl came from a boot
+        -- file or not; we'll use this to choose between
+        -- NoUnfolding and BootUnfolding
+        if_boot :: Bool,
 
         -- The field is used only for error reporting
         -- if (say) there's a Lint error in it
@@ -624,10 +630,10 @@ data SelfBootInfo
   = NoSelfBoot    -- No corresponding hi-boot file
   | SelfBoot
        { sb_mds :: ModDetails   -- There was a hi-boot file,
-       , sb_tcs :: NameSet      -- defining these TyCons,
-       , sb_ids :: NameSet }    -- and these Ids
-  -- We need this info to compute a safe approximation to
-  -- recursive loops, to avoid infinite inlinings
+       , sb_tcs :: NameSet }    -- defining these TyCons,
+-- What is sb_tcs used for?  See Note [Extra dependencies from .hs-boot files]
+-- in RnSource
+
 
 {- Note [Tracking unused binding and imports]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -778,6 +784,10 @@ data TcIdBinder
 instance Outputable TcIdBinder where
    ppr (TcIdBndr id top_lvl)           = ppr id <> brackets (ppr top_lvl)
    ppr (TcIdBndr_ExpType id _ top_lvl) = ppr id <> brackets (ppr top_lvl)
+
+instance HasOccName TcIdBinder where
+    occName (TcIdBndr id _) = (occName (idName id))
+    occName (TcIdBndr_ExpType name _ _) = (occName name)
 
 ---------------------------
 -- Template Haskell stages and levels
@@ -3159,7 +3169,7 @@ data TcPluginResult
   = TcPluginContradiction [Ct]
     -- ^ The plugin found a contradiction.
     -- The returned constraints are removed from the inert set,
-    -- and recorded as insoluable.
+    -- and recorded as insoluble.
 
   | TcPluginOk [(EvTerm,Ct)] [Ct]
     -- ^ The first field is for constraints that were solved.
