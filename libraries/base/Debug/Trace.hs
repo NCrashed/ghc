@@ -42,15 +42,28 @@ module Debug.Trace (
         -- $markers
         traceMarker,
         traceMarkerIO,
+
+        -- * Eventlog options
+        -- $eventlog_options
+        setEventLogCFile,
+        getEventLogCFile,
+        setEventLogBufferSize,
+        getEventLogBufferSize,
+        getEventLogChunk
   ) where
 
+import System.IO
 import System.IO.Unsafe
 
+import Foreign (peek)
 import Foreign.C.String
+import Foreign.C.Types
+import Foreign.Marshal.Alloc
+import Foreign.Marshal.Utils (fromBool)
 import GHC.Base
 import qualified GHC.Foreign
-import GHC.IO.Encoding
 import GHC.Ptr
+import GHC.Real (fromIntegral)
 import GHC.Show
 import GHC.Stack
 import Data.List
@@ -293,3 +306,102 @@ traceMarkerIO :: String -> IO ()
 traceMarkerIO msg =
   GHC.Foreign.withCString utf8 msg $ \(Ptr p) -> IO $ \s ->
     case traceMarker# p s of s' -> (# s', () #)
+
+-- $eventlog_options
+--
+-- By default the eventlog uses local file with name of the executable to dump
+-- all events. The following functions allows to redefine the behavior and
+-- redirect the stream of bytes into user specified handler. Thus is very
+-- helpful for implementing complex tools, for instance remote profilers.
+
+foreign import ccall "rts/EventLog.h rts_setEventLogSink"
+  rts_setEventLogSink :: Ptr CFile -> CInt -> CInt -> IO ()
+
+foreign import ccall "rts/EventLog.h rts_getEventLogSink"
+  rts_getEventLogSink :: IO (Ptr CFile)
+
+foreign import ccall "rts/EventLog.h rts_resizeEventLog"
+  rts_resizeEventLog :: CSize -> IO ()
+
+foreign import ccall "rts/EventLog.h rts_getEventLogBuffersSize"
+  rts_getEventLogBuffersSize :: IO CSize
+
+foreign import ccall "rts/EventLog.h rts_getEventLogChunk"
+  rts_getEventLogChunk :: Ptr (Ptr CChar) -> IO CSize
+
+
+-- | The 'setEventLogCFile' function changes current sink of the eventlog,
+-- if eventlog profiling is available and enabled at runtime.
+--
+-- The second parameter defines whether old sink should be finalized and closed
+-- or not. Preserving it could be helpful for temporal redirection of eventlog
+-- data into not standard sink and then restoring to the default file sink.
+--
+-- The third parameter defines whether new header section should be emitted to
+-- the new sink. Emitting header to already started eventlog streams will
+-- corrupt the structure of eventlog format.
+--
+-- The function is more low-level than 'setEventLogHandle' but doesn't recreate
+-- underlying file descriptor and is intended to use with 'getEventLogCFile'
+-- to save and restore current sink of the eventlog.
+--
+-- @since 4.10.0.0
+setEventLogCFile :: Ptr CFile -> Bool -> Bool -> IO ()
+setEventLogCFile pf closePrev emitHeader = rts_setEventLogSink pf
+  (fromBool closePrev)
+  (fromBool emitHeader)
+
+-- | The 'getEventLogCFile' function returns current sink of the eventlog, if
+-- eventlog profiling is available and enabled at runtime.
+--
+-- The function is intented to be used with 'setEventLogCFile' to save and
+-- restore current sink of the eventlog.
+--
+-- @since 4.10.0.0
+getEventLogCFile :: IO (Ptr CFile)
+getEventLogCFile = rts_getEventLogSink
+
+-- | Setting size of internal eventlog buffers. The size should be not
+-- too small to contain at least one event.
+--
+-- If RTS started with '-lm' the chunks of memory buffer is also resized.
+--
+-- The larger the buffers the lesser overhead from event logging, but
+-- larger delays between data dumps.
+--
+-- See also: 'getEventLogChunk', 'getEventLogBufferSize'
+setEventLogBufferSize :: Word -> IO ()
+setEventLogBufferSize size = rts_resizeEventLog (fromIntegral size)
+
+-- | Getting size of internal eventlog buffers.
+--
+-- See also: 'setEventLogBufferSize', 'getEventLogChunk'
+getEventLogBufferSize :: IO Word
+getEventLogBufferSize = fmap fromIntegral rts_getEventLogBuffersSize
+
+-- | Get next portion of the eventlog data.
+--
+-- If RTS started with '-lm' flag then eventlog is stored in memory buffer.
+--
+-- The function allows to pop chunks out of the buffer. Return value of Nothing
+-- means that there is no any filled chunk of data.
+--
+-- If the function returns nonzero value the parameter contains full chunk
+-- of eventlog data with size of the returned value. Caller must free the
+-- buffer with 'free' from 'Foreign.Marshal.Alloc', the buffer isn't referenced
+-- anywhere anymore.
+--
+-- If nobody calls the function with '-lm' flag on then the memory is kinda
+-- to be exhausted.
+--
+-- If '-lm' flag is off, the function returns always 'Nothing'.
+--
+-- See also: 'setEventLogBufferSize'
+getEventLogChunk :: IO (Maybe CStringLen)
+getEventLogChunk = alloca $ \ptrBuf -> do
+  size <- rts_getEventLogChunk ptrBuf
+  if size == 0
+    then return Nothing
+    else do
+      buf <- peek ptrBuf
+      return $ Just (buf, fromIntegral size)
