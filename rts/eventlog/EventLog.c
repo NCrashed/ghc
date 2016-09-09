@@ -17,6 +17,8 @@
 #include "Stats.h"
 #include "EventLog.h"
 
+#include "ChunkedBuffer.h"
+
 #include <string.h>
 #include <stdio.h>
 #ifdef HAVE_SYS_TYPES_H
@@ -34,7 +36,9 @@ static char *event_log_filename = NULL;
 // File for logging events
 FILE *event_log_file = NULL;
 
+// default size
 #define EVENT_LOG_SIZE 2 * (1024 * 1024) // 2MB
+static StgWord64 currentEventLogSize;
 
 static int flushCount;
 
@@ -124,7 +128,10 @@ typedef struct _EventType {
 EventType eventTypes[NUM_GHC_EVENT_TAGS];
 
 static void initEventsBuf(EventsBuf* eb, StgWord64 size, EventCapNo capno);
+static void resizeEventsBuf(EventsBuf* eb, StgWord64 size);
+static void writeEventLoggingHeader(EventsBuf* eb);
 static void resetEventsBuf(EventsBuf* eb);
+static void flushEventsBufs(void);
 static void printAndClearEventBuf (EventsBuf *eventsBuf);
 
 static void postEventType(EventsBuf *eb, EventType *et);
@@ -235,7 +242,7 @@ static inline void postInt32(EventsBuf *eb, StgInt32 i)
 void
 initEventLogging(void)
 {
-    StgWord8 t, c;
+    StgWord8 c;
     uint32_t n_caps;
     char *prog;
 
@@ -299,15 +306,44 @@ initEventLogging(void)
 #else
     n_caps = 1;
 #endif
+    currentEventLogSize = EVENT_LOG_SIZE;
     moreCapEventBufs(0,n_caps);
 
-    initEventsBuf(&eventBuf, EVENT_LOG_SIZE, (EventCapNo)(-1));
+    initEventsBuf(&eventBuf, currentEventLogSize, (EventCapNo)(-1));
+
+    // Init memory buffer before writing the header
+    if (RtsFlags.TraceFlags.in_memory) {
+        initEventLogChunkedBuffer(currentEventLogSize);
+    }
+
+    writeEventLoggingHeader(&eventBuf);
+
+    // Flush capEventBuf with header.
+    /*
+     * Flush header and data begin marker to the file, thus preparing the
+     * file to have events written to it.
+     */
+    printAndClearEventBuf(&eventBuf);
+
+    for (c = 0; c < n_caps; ++c) {
+        postBlockMarker(&capEventBuf[c]);
+    }
+
+#ifdef THREADED_RTS
+    initMutex(&eventBufMutex);
+#endif
+}
+
+void
+writeEventLoggingHeader(EventsBuf *eb)
+{
+    StgWord8 t;
 
     // Write in buffer: the header begin marker.
-    postInt32(&eventBuf, EVENT_HEADER_BEGIN);
+    postInt32(eb, EVENT_HEADER_BEGIN);
 
     // Mark beginning of event types in the header.
-    postInt32(&eventBuf, EVENT_HET_BEGIN);
+    postInt32(eb, EVENT_HET_BEGIN);
     for (t = 0; t < NUM_GHC_EVENT_TAGS; ++t) {
 
         eventTypes[t].etNum = t;
@@ -476,44 +512,23 @@ initEventLogging(void)
         }
 
         // Write in buffer: the start event type.
-        postEventType(&eventBuf, &eventTypes[t]);
+        postEventType(eb, &eventTypes[t]);
     }
 
     // Mark end of event types in the header.
-    postInt32(&eventBuf, EVENT_HET_END);
+    postInt32(eb, EVENT_HET_END);
 
     // Write in buffer: the header end marker.
-    postInt32(&eventBuf, EVENT_HEADER_END);
+    postInt32(eb, EVENT_HEADER_END);
 
     // Prepare event buffer for events (data).
-    postInt32(&eventBuf, EVENT_DATA_BEGIN);
-
-    // Flush capEventBuf with header.
-    /*
-     * Flush header and data begin marker to the file, thus preparing the
-     * file to have events written to it.
-     */
-    printAndClearEventBuf(&eventBuf);
-
-    for (c = 0; c < n_caps; ++c) {
-        postBlockMarker(&capEventBuf[c]);
-    }
-
-#ifdef THREADED_RTS
-    initMutex(&eventBufMutex);
-#endif
+    postInt32(eb, EVENT_DATA_BEGIN);
 }
 
 void
 endEventLogging(void)
 {
-    uint32_t c;
-
-    // Flush all events remaining in the buffers.
-    for (c = 0; c < n_capabilities; ++c) {
-        printAndClearEventBuf(&capEventBuf[c]);
-    }
-    printAndClearEventBuf(&eventBuf);
+    flushEventsBufs();
     resetEventsBuf(&eventBuf); // we don't want the block marker
 
     // Mark end of events (data).
@@ -525,6 +540,22 @@ endEventLogging(void)
     if (event_log_file != NULL) {
         fclose(event_log_file);
     }
+
+    if (RtsFlags.TraceFlags.in_memory) {
+        destroyEventLogChunkedBuffer();
+    }
+}
+
+void
+flushEventsBufs(void)
+{
+    uint32_t c;
+
+    // Flush all events remaining in the buffers.
+    for (c = 0; c < n_capabilities; ++c) {
+        printAndClearEventBuf(&capEventBuf[c]);
+    }
+    printAndClearEventBuf(&eventBuf);
 }
 
 void
@@ -541,7 +572,7 @@ moreCapEventBufs (uint32_t from, uint32_t to)
     }
 
     for (c = from; c < to; ++c) {
-        initEventsBuf(&capEventBuf[c], EVENT_LOG_SIZE, c);
+        initEventsBuf(&capEventBuf[c], currentEventLogSize, c);
     }
 
     // The from == 0 already covered in initEventLogging, so we are interested
@@ -1287,24 +1318,35 @@ void printAndClearEventBuf (EventsBuf *ebuf)
 
     if (ebuf->begin != NULL && ebuf->pos != ebuf->begin)
     {
-        StgInt8 *begin = ebuf->begin;
-        while (begin < ebuf->pos) {
-            StgWord64 remain = ebuf->pos - begin;
-            StgWord64 written = fwrite(begin, 1, remain, event_log_file);
-            if (written == 0) {
-                debugBelch(
-                    "printAndClearEventLog: fwrite() failed to write anything;"
-                    " tried to write numBytes=%" FMT_Word64, remain);
-                resetEventsBuf(ebuf);
-                return;
+        if (event_log_file != NULL) {
+            StgInt8 *begin = ebuf->begin;
+            while (begin < ebuf->pos) {
+                StgWord64 remain = ebuf->pos - begin;
+                StgWord64 written = fwrite(begin, 1, remain, event_log_file);
+                if (written == 0) {
+                    debugBelch(
+                        "printAndClearEventLog: fwrite() failed to write"
+                        "anything; tried to write numBytes=%" FMT_Word64,
+                        remain);
+                    resetEventsBuf(ebuf);
+                    return;
+                }
+                begin += written;
             }
-            begin += written;
+        }
+        if (RtsFlags.TraceFlags.in_memory && ebuf->begin < ebuf->pos) {
+            writeEventLogChunked(ebuf->begin, ebuf->pos - ebuf->begin);
         }
 
         resetEventsBuf(ebuf);
         flushCount++;
 
         postBlockMarker(ebuf);
+    }
+
+    if (ebuf->size != currentEventLogSize) {
+        resetEventsBuf(ebuf);
+        resizeEventsBuf(ebuf, currentEventLogSize);
     }
 }
 
@@ -1314,6 +1356,35 @@ void initEventsBuf(EventsBuf* eb, StgWord64 size, EventCapNo capno)
     eb->size = size;
     eb->marker = NULL;
     eb->capno = capno;
+}
+
+void resizeEventsBuf(EventsBuf* eb, StgWord64 size)
+{
+    StgInt8 *newBegin;
+    StgInt8 *oldBegin;
+
+    newBegin = stgMallocBytes(size, "resizeEventsBuf");
+    oldBegin = eb->begin;
+
+    eb->begin = eb->pos = newBegin;
+    stgFree(oldBegin);
+
+    eb->size = size;
+}
+
+void resizeEventLog(StgWord64 size)
+{
+    ACQUIRE_LOCK(&eventBufMutex);
+
+    // Reallocate chunked buffer if enabled
+    if (RtsFlags.TraceFlags.in_memory) {
+        resizeEventLogChunkedBuffer(size);
+    }
+
+    currentEventLogSize = size;
+    // Capabilities buffers will be resized while flushing
+
+    RELEASE_LOCK(&eventBufMutex);
 }
 
 void resetEventsBuf(EventsBuf* eb)
@@ -1384,6 +1455,84 @@ void postEventType(EventsBuf *eb, EventType *et)
     }
     postWord32(eb, 0); // no extensions yet
     postInt32(eb, EVENT_ET_END);
+}
+
+void rts_setEventLogSink(FILE *sink,
+                         StgBool closePrev,
+                         StgBool emitHeader)
+{
+    FILE *oldFile;
+
+    ACQUIRE_LOCK(&eventBufMutex);
+
+    printAndClearEventBuf(&eventBuf);
+    resetEventsBuf(&eventBuf); // we don't want the block marker
+
+    // Actually update the file pointer
+    oldFile = event_log_file;
+    event_log_file = sink;
+
+    if (emitHeader) {
+        writeEventLoggingHeader(&eventBuf); // Write header to empty eventBuf
+        /*
+         * Flush header and data begin marker to the new file, thus preparing
+         * the file to have events written to it.
+         */
+        printAndClearEventBuf(&eventBuf);
+    }
+    if (closePrev && oldFile != NULL) {
+        fclose(oldFile);
+    }
+
+    RELEASE_LOCK(&eventBufMutex);
+}
+
+FILE* rts_getEventLogSink()
+{
+    return event_log_file;
+}
+
+StgWord64 rts_getEventLogChunk(StgInt8 **ptr)
+{
+    return getEventLogChunk(ptr);
+}
+
+void rts_resizeEventLog(StgWord64 size)
+{
+    resizeEventLog(size);
+}
+
+StgWord64 rts_getEventLogBuffersSize(void)
+{
+    ACQUIRE_LOCK(&eventBufMutex);
+    StgWord64 ret = currentEventLogSize;
+    RELEASE_LOCK(&eventBufMutex);
+    return ret;
+}
+
+#else
+
+void rts_setEventLogSink(FILE    *sink       STG_UNUSED,
+                         StgBool  closePrev  STG_UNUSED,
+                         StgBool  emitHeader STG_UNUSED)
+{ /* nothing */ }
+
+FILE* rts_getEventLogSink(void)
+{
+  return NULL;
+}
+
+StgWord64 rts_getEventLogChunk(StgInt8** ptr STG_UNUSED)
+{
+  return 0;
+}
+
+void rts_resizeEventLog(StgWord64 size STG_UNUSED)
+{ /* nothing */ }
+
+StgWord64 rts_getEventLogBuffersSize(void)
+{
+  return 0;
 }
 
 #endif /* TRACING */
