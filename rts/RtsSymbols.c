@@ -706,6 +706,11 @@
       SymI_HasProto(rts_setThreadAllocationCounter)                     \
       SymI_HasProto(rts_enableThreadAllocationLimit)                    \
       SymI_HasProto(rts_disableThreadAllocationLimit)                   \
+      SymI_HasProto(rts_getEventLogBuffersSize)                         \
+      SymI_HasProto(rts_getEventLogChunk)                               \
+      SymI_HasProto(rts_getEventLogSink)                                \
+      SymI_HasProto(rts_resizeEventLog)                                 \
+      SymI_HasProto(rts_setEventLogSink)                                \
       SymI_HasProto(setProgArgv)                                        \
       SymI_HasProto(startupHaskell)                                     \
       SymI_HasProto(shutdownHaskell)                                    \
