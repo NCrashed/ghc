@@ -339,6 +339,7 @@ usage_text[] = {
 "                f    par spark events (full detail)",
 "                u    user events (emitted from Haskell code)",
 "                a    all event classes above",
+"                m    store all events in memory",
 #  ifdef DEBUG
 "                t    add time stamps (only useful with -v)",
 #  endif
@@ -1845,6 +1846,10 @@ static void read_trace_flags(const char *arg)
             break;
         case 'u':
             RtsFlags.TraceFlags.user      = enabled;
+            enabled = rtsTrue;
+            break;
+        case 'm':
+            RtsFlags.TraceFlags.in_memory = enabled;
             enabled = rtsTrue;
             break;
         default:

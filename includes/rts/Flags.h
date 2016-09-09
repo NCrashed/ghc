@@ -157,6 +157,7 @@ typedef struct _TRACE_FLAGS {
     rtsBool sparks_sampled; /* trace spark events by a sampled method */
     rtsBool sparks_full;    /* trace spark events 100% accurately */
     rtsBool user;           /* trace user events (emitted from Haskell code) */
+    rtsBool in_memory;      /* store all events in memory */
 } TRACE_FLAGS;
 
 /* See Note [Synchronization of flags and base APIs] */

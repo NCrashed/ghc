@@ -279,6 +279,7 @@ data TraceFlags = TraceFlags
     , sparksSampled  :: Bool -- ^ trace spark events by a sampled method
     , sparksFull     :: Bool -- ^ trace spark events 100% accurately
     , user           :: Bool -- ^ trace user events (emitted from Haskell code)
+    , inMemory       :: Bool -- ^ store all events in memory
     } deriving (Show)
 
 -- | Parameters pertaining to ticky-ticky profiler
@@ -463,6 +464,7 @@ getTraceFlags = do
              <*> #{peek TRACE_FLAGS, sparks_sampled} ptr
              <*> #{peek TRACE_FLAGS, sparks_full} ptr
              <*> #{peek TRACE_FLAGS, user} ptr
+             <*> #{peek TRACE_FLAGS, in_memory} ptr
 
 getTickyFlags :: IO TickyFlags
 getTickyFlags = do
