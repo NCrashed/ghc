@@ -13,6 +13,19 @@
 #define RTS_EVENTLOG_H
 
 /*
+ * If RTS started with '-lm' flag then eventlog is stored in memory buffer.
+ * The memory buffer is organized as linked list of memory chunks. The eventlog
+ * system appends new events to current tail of the list and when it is full 
+ * a new chunk is allocated. User is intended to consume chunks with 
+ * rts_getEventLogChunk function, but if one doesn't do this or consumer is too 
+ * slow then count of stacked chunk will grow without control.
+ *
+ * So there is a hard limit for length of the linked list. When the count is
+ * reached new events are simply dropped off.
+ */
+#define EVENTLOG_MAX_MEMORY_CHUNKS 32
+
+/*
  * Set custom file stream for global event log sink.
  *
  * The function overwrites previous event log file pointer. Previouss
@@ -37,6 +50,7 @@ void rts_setEventLogSink(FILE *sink,
  */
 FILE* rts_getEventLogSink(void);
 
+
 /*
  * If RTS started with '-lm' flag then eventlog is stored in memory buffer.
  *
@@ -47,8 +61,13 @@ FILE* rts_getEventLogSink(void);
  * of eventlog data with size of the returned value. Caller must free the
  * buffer, the buffer isn't referenced anywhere anymore.
  *
- * If nobody calls the function with '-lm' flag then the memory is kinda
- * to be exhausted.
+ * User is intended to consume chunks with the function periodically, 
+ * but if one doesn't do this or consumer is too slow then count of stacked 
+ * chunk will grow without control.
+ *
+ * So there is a hard limit for length of the linked list. When the count is
+ * reached new events are simply dropped off. See EVENTLOG_MAX_MEMORY_CHUNKS
+ * macro.
  */
 StgWord64 rts_getEventLogChunk(StgInt8** ptr);
 

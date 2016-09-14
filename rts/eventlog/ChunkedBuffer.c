@@ -24,6 +24,9 @@ Mutex eventlogMutex; // protected by this mutex
 StgBool mutexInited = rtsFalse;
 #endif
 
+// Same as getChunkedTail but doesn't decent to tail
+ChunkedNode* ensureTail(ChunkedBuffer *buf);
+
 ChunkedNode* newChunkedNode(ChunkedNode *prev, StgWord64 chunkSize)
 {
     ChunkedNode *node = stgMallocBytes(sizeof(ChunkedNode),
@@ -40,6 +43,8 @@ ChunkedBuffer* newChunkedBuffer(StgWord64 chunkSize)
 {
     ChunkedBuffer *buf = stgMallocBytes(sizeof(ChunkedBuffer), "ChunkedBuffer");
     buf->head = newChunkedNode(NULL, chunkSize);
+    buf->tail = buf->head;
+    buf->chunksCount = 1;
     buf->tailSize = 0;
     buf->chunkSize = chunkSize;
     return buf;
@@ -64,6 +69,39 @@ void freeChunkedBuffer(ChunkedBuffer *buf)
     }
 }
 
+ChunkedNode* ensureTail(ChunkedBuffer *buf) 
+{
+    ChunkedNode *newTail;
+
+    if (buf == NULL) {
+        return NULL;
+    }
+
+    if (buf->head == NULL) {
+        buf->head = newChunkedNode(NULL, buf->chunkSize);
+        buf->tail = buf->head;
+        buf->tailSize = 0;
+        buf->chunksCount = 1;
+        return buf->tail;
+    }
+
+    if (buf->tail == NULL) {
+        debugBelch("ensureTail: inconsistent chunked buffer");
+        return NULL;
+    }
+
+    if(buf->tailSize == buf->chunkSize) {
+        newTail = newChunkedNode(buf->tail, buf->chunkSize);
+        buf->tail->next = newTail;
+        buf->tail = newTail;
+        buf->tailSize = 0;
+        buf->chunksCount += 1;
+        return newTail;
+    }
+
+    return buf->tail;
+}
+
 ChunkedNode* getChunkedTail(ChunkedBuffer *buf)
 {
     if (buf == NULL) {
@@ -72,6 +110,9 @@ ChunkedNode* getChunkedTail(ChunkedBuffer *buf)
 
     if (buf->head == NULL) {
         buf->head = newChunkedNode(NULL, buf->chunkSize);
+        buf->tail = buf->head;
+        buf->tailSize = 0;
+        buf->chunksCount = 1;
     }
 
     ChunkedNode* curNode = buf->head;
@@ -79,7 +120,7 @@ ChunkedNode* getChunkedTail(ChunkedBuffer *buf)
         curNode = curNode->next;
     }
 
-    if(buf->tailSize >= buf->chunkSize) {
+    if(buf->tailSize == buf->chunkSize) {
         curNode->next = newChunkedNode(curNode, buf->chunkSize);
         buf->tailSize = 0;
         return curNode->next;
@@ -104,7 +145,12 @@ StgWord64 getChunksCount(ChunkedBuffer *buf) {
 
 void writeChunked(ChunkedBuffer *buf, StgInt8 *data, StgWord64 size)
 {
-    ChunkedNode* curTail = getChunkedTail(buf);
+    if (buf == NULL) {
+        debugBelch("writeChunked: passed NULL buf!");
+        return;
+    }
+
+    ChunkedNode* curTail = ensureTail(buf);
     if (curTail == NULL) {
         debugBelch("writeChunked: buffer isn't initalized!");
         return;
@@ -120,10 +166,12 @@ void writeChunked(ChunkedBuffer *buf, StgInt8 *data, StgWord64 size)
         size = size - curReminder;
         data = data + curReminder;
 
-        if (buf->tailSize >= buf->chunkSize) {
+        if (buf->tailSize == buf->chunkSize) {
             curTail->next = newChunkedNode(curTail, buf->chunkSize);
-            buf->tailSize = 0;
             curTail = curTail->next;
+            buf->tail = curTail;
+            buf->tailSize = 0;
+            buf->chunksCount += 1;
         }
     }
 }
@@ -139,7 +187,9 @@ ChunkedNode* popChunkedLog(ChunkedBuffer *buf) {
 
     ChunkedNode *ret = buf->head;
     buf->head = buf->head->next;
+    buf->chunksCount -= 1;
     if (buf->head == NULL) {
+        buf->tail = NULL;
         buf->tailSize = 0;
     }
 
@@ -240,6 +290,15 @@ StgWord64 getEventLogChunkedBufferSize(void)
     }
 
     return eventlogBuffer->chunkSize;
+}
+
+StgWord64 getEventLogChunksCount(void)
+{
+    if (eventlogBuffer == NULL) {
+        return 0;
+    }
+
+    return eventlogBuffer->chunksCount;
 }
 
 #endif /* TRACING */

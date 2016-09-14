@@ -1334,7 +1334,9 @@ void printAndClearEventBuf (EventsBuf *ebuf)
                 begin += written;
             }
         }
-        if (RtsFlags.TraceFlags.in_memory && ebuf->begin < ebuf->pos) {
+        if (RtsFlags.TraceFlags.in_memory && ebuf->begin < ebuf->pos &&
+            getEventLogChunksCount() < EVENTLOG_MAX_MEMORY_CHUNKS) 
+        {
             writeEventLogChunked(ebuf->begin, ebuf->pos - ebuf->begin);
         }
 
