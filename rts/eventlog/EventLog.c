@@ -44,9 +44,9 @@ static int flushCount;
 
 // Struct for record keeping of buffer to store event types and events.
 typedef struct _EventsBuf {
-  StgInt8 *begin;
-  StgInt8 *pos;
-  StgInt8 *marker;
+  uint8_t *begin;
+  uint8_t *pos;
+  uint8_t *marker;
   StgWord64 size;
   EventCapNo capno; // which capability this buffer belongs to, or -1
 } EventsBuf;
@@ -1141,7 +1141,7 @@ void postThreadLabel(Capability    *cap,
 
 void closeBlockMarker (EventsBuf *ebuf)
 {
-    StgInt8* save_pos;
+    uint8_t* save_pos;
 
     if (ebuf->marker)
     {
@@ -1319,7 +1319,7 @@ void printAndClearEventBuf (EventsBuf *ebuf)
     if (ebuf->begin != NULL && ebuf->pos != ebuf->begin)
     {
         if (event_log_file != NULL) {
-            StgInt8 *begin = ebuf->begin;
+            uint8_t *begin = ebuf->begin;
             while (begin < ebuf->pos) {
                 StgWord64 remain = ebuf->pos - begin;
                 StgWord64 written = fwrite(begin, 1, remain, event_log_file);
@@ -1362,8 +1362,8 @@ void initEventsBuf(EventsBuf* eb, StgWord64 size, EventCapNo capno)
 
 void resizeEventsBuf(EventsBuf* eb, StgWord64 size)
 {
-    StgInt8 *newBegin;
-    StgInt8 *oldBegin;
+    uint8_t *newBegin;
+    uint8_t *oldBegin;
 
     newBegin = stgMallocBytes(size, "resizeEventsBuf");
     oldBegin = eb->begin;
@@ -1453,15 +1453,15 @@ void postEventType(EventsBuf *eb, EventType *et)
     desclen = strlen(et->desc);
     postWord32(eb, desclen);
     for (d = 0; d < desclen; ++d) {
-        postInt8(eb, (StgInt8)et->desc[d]);
+        postInt8(eb, (uint8_t)et->desc[d]);
     }
     postWord32(eb, 0); // no extensions yet
     postInt32(eb, EVENT_ET_END);
 }
 
-void rts_setEventLogSink(FILE *sink,
-                         StgBool closePrev,
-                         StgBool emitHeader)
+void rts_setEventLogSink(FILE    *sink,
+                         StgBool  closePrev,
+                         StgBool  emitHeader)
 {
     FILE *oldFile;
 
@@ -1494,20 +1494,20 @@ FILE* rts_getEventLogSink()
     return event_log_file;
 }
 
-StgWord64 rts_getEventLogChunk(StgInt8 **ptr)
+uint64_t rts_getEventLogChunk(uint8_t **ptr)
 {
     return getEventLogChunk(ptr);
 }
 
-void rts_resizeEventLog(StgWord64 size)
+void rts_resizeEventLog(uint64_t size)
 {
     resizeEventLog(size);
 }
 
-StgWord64 rts_getEventLogBuffersSize(void)
+uint64_t rts_getEventLogBuffersSize(void)
 {
     ACQUIRE_LOCK(&eventBufMutex);
-    StgWord64 ret = currentEventLogSize;
+    uint64_t ret = currentEventLogSize;
     RELEASE_LOCK(&eventBufMutex);
     return ret;
 }
@@ -1524,15 +1524,15 @@ FILE* rts_getEventLogSink(void)
   return NULL;
 }
 
-StgWord64 rts_getEventLogChunk(StgInt8** ptr STG_UNUSED)
+uint64_t rts_getEventLogChunk(uint8_t** ptr STG_UNUSED)
 {
   return 0;
 }
 
-void rts_resizeEventLog(StgWord64 size STG_UNUSED)
+void rts_resizeEventLog(uint64_t size STG_UNUSED)
 { /* nothing */ }
 
-StgWord64 rts_getEventLogBuffersSize(void)
+uint64_t rts_getEventLogBuffersSize(void)
 {
   return 0;
 }

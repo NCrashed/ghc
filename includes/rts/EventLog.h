@@ -69,7 +69,7 @@ FILE* rts_getEventLogSink(void);
  * reached new events are simply dropped off. See EVENTLOG_MAX_MEMORY_CHUNKS
  * macro.
  */
-StgWord64 rts_getEventLogChunk(StgInt8** ptr);
+uint64_t rts_getEventLogChunk(uint8_t** ptr);
 
 /*
  * Reallocate inner buffers to match the new size. The size should be not
@@ -77,11 +77,11 @@ StgWord64 rts_getEventLogChunk(StgInt8** ptr);
  *
  * If RTS started with '-lm' the chunks of memory buffer is also resized.
  */
-void rts_resizeEventLog(StgWord64 size);
+void rts_resizeEventLog(uint64_t size);
 
 /*
  * Return current size of eventlog buffers.
  */
-StgWord64 rts_getEventLogBuffersSize(void);
+uint64_t rts_getEventLogBuffersSize(void);
 
 #endif /* RTS_EVENTLOG_H */

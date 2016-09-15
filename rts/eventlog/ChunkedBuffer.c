@@ -27,7 +27,7 @@ StgBool mutexInited = rtsFalse;
 // Same as getChunkedTail but doesn't decent to tail
 ChunkedNode* ensureTail(ChunkedBuffer *buf);
 
-ChunkedNode* newChunkedNode(ChunkedNode *prev, StgWord64 chunkSize)
+ChunkedNode* newChunkedNode(ChunkedNode *prev, uint64_t chunkSize)
 {
     ChunkedNode *node = stgMallocBytes(sizeof(ChunkedNode),
         "ChunkedNode struct");
@@ -39,7 +39,7 @@ ChunkedNode* newChunkedNode(ChunkedNode *prev, StgWord64 chunkSize)
     return node;
 }
 
-ChunkedBuffer* newChunkedBuffer(StgWord64 chunkSize)
+ChunkedBuffer* newChunkedBuffer(uint64_t chunkSize)
 {
     ChunkedBuffer *buf = stgMallocBytes(sizeof(ChunkedBuffer), "ChunkedBuffer");
     buf->head = newChunkedNode(NULL, chunkSize);
@@ -129,12 +129,12 @@ ChunkedNode* getChunkedTail(ChunkedBuffer *buf)
     return curNode;
 }
 
-StgWord64 getChunksCount(ChunkedBuffer *buf) {
+uint64_t getChunksCount(ChunkedBuffer *buf) {
     if(buf == NULL || buf->head == NULL) {
         return 0;
     }
 
-    StgWord64 i = 0;
+    uint64_t i = 0;
     ChunkedNode* cur = buf->head;
     while(cur != NULL) {
         cur = cur->next;
@@ -143,7 +143,7 @@ StgWord64 getChunksCount(ChunkedBuffer *buf) {
     return i;
 }
 
-void writeChunked(ChunkedBuffer *buf, StgInt8 *data, StgWord64 size)
+void writeChunked(ChunkedBuffer *buf, uint8_t *data, uint64_t size)
 {
     if (buf == NULL) {
         debugBelch("writeChunked: passed NULL buf!");
@@ -157,7 +157,7 @@ void writeChunked(ChunkedBuffer *buf, StgInt8 *data, StgWord64 size)
     }
 
     while(size > 0) {
-        StgWord64 curReminder = buf->chunkSize - buf->tailSize;
+        uint64_t curReminder = buf->chunkSize - buf->tailSize;
         if (curReminder > size) {
             curReminder = size;
         }
@@ -196,7 +196,7 @@ ChunkedNode* popChunkedLog(ChunkedBuffer *buf) {
     return ret;
 }
 
-void writeEventLogChunked(StgInt8 *data, StgWord64 size) {
+void writeEventLogChunked(uint8_t *data, uint64_t size) {
     ACQUIRE_LOCK(&eventlogMutex);
 
     writeChunked(eventlogBuffer, data, size);
@@ -204,9 +204,9 @@ void writeEventLogChunked(StgInt8 *data, StgWord64 size) {
     RELEASE_LOCK(&eventlogMutex);
 }
 
-StgWord64 getEventLogChunk(StgInt8** ptr) {
+uint64_t getEventLogChunk(uint8_t** ptr) {
     ACQUIRE_LOCK(&eventlogMutex);
-    StgWord64 size = 0;
+    uint64_t size = 0;
     ChunkedNode *node;
 
     node = popChunkedLog(eventlogBuffer);
@@ -220,7 +220,7 @@ StgWord64 getEventLogChunk(StgInt8** ptr) {
     return size;
 }
 
-void initEventLogChunkedBuffer(StgWord64 chunkSize) {
+void initEventLogChunkedBuffer(uint64_t chunkSize) {
 #ifdef THREADED_RTS
     if (!mutexInited) {
         initMutex(&eventlogMutex);
@@ -247,7 +247,7 @@ void destroyEventLogChunkedBuffer(void) {
     RELEASE_LOCK(&eventlogMutex);
 }
 
-void resizeEventLogChunkedBuffer(StgWord64 chunkSize)
+void resizeEventLogChunkedBuffer(uint64_t chunkSize)
 {
 #ifdef THREADED_RTS
     if (!mutexInited) {
@@ -266,7 +266,7 @@ void resizeEventLogChunkedBuffer(StgWord64 chunkSize)
 
         ChunkedNode *node = buf->head;
         while (node != NULL) {
-            StgWord64 remain;
+            uint64_t remain;
             if (node->next == NULL) {
                 remain = buf->tailSize;
             } else {
@@ -283,7 +283,7 @@ void resizeEventLogChunkedBuffer(StgWord64 chunkSize)
     RELEASE_LOCK(&eventlogMutex);
 }
 
-StgWord64 getEventLogChunkedBufferSize(void)
+uint64_t getEventLogChunkedBufferSize(void)
 {
     if (eventlogBuffer == NULL) {
         return 0;
@@ -292,7 +292,7 @@ StgWord64 getEventLogChunkedBufferSize(void)
     return eventlogBuffer->chunkSize;
 }
 
-StgWord64 getEventLogChunksCount(void)
+uint64_t getEventLogChunksCount(void)
 {
     if (eventlogBuffer == NULL) {
         return 0;

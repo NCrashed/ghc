@@ -17,7 +17,7 @@
 
 // Single chunk of chunked list
 typedef struct _ChunkedNode {
-  StgInt8 *mem; // Payload, should be always size of chunkSize in ChunkedBuffer
+  uint8_t *mem; // Payload, should be always size of chunkSize in ChunkedBuffer
   struct _ChunkedNode *next; // Next chunk in list, can be NULL
 } ChunkedNode;
 
@@ -25,20 +25,20 @@ typedef struct _ChunkedNode {
 typedef struct _ChunkedBuffer {
   ChunkedNode *head; // First chunk, can be NULL
   ChunkedNode *tail; // Last chunk, can be NULL
-  StgWord64 tailSize; // Memory used in the last chunk, when this become equal
+  uint64_t tailSize; // Memory used in the last chunk, when this become equal
                       // chunkSize a new chunk is allocated
-  StgWord64 chunksCount; // Current size of the list
-  StgWord64 chunkSize; // Current size of each chunk payload
+  uint64_t chunksCount; // Current size of the list
+  uint64_t chunkSize; // Current size of each chunk payload
 } ChunkedBuffer;
 
 // Allocate new chunk with current chunk size and link to previous chunk
-ChunkedNode* newChunkedNode(ChunkedNode *prev, StgWord64 chunkSize);
+ChunkedNode* newChunkedNode(ChunkedNode *prev, uint64_t chunkSize);
 // Allocate new chunked buffer and allocate head with given chunkSize
-ChunkedBuffer* newChunkedBuffer(StgWord64 chunkSize);
+ChunkedBuffer* newChunkedBuffer(uint64_t chunkSize);
 
-// Destroy the chunk, its buffer and all childs
+// Destroy the chunk, its buffer and all children
 void freeChunkedNode(ChunkedNode *node);
-// Destroy the chunk, its buffer and all childs
+// Destroy the chunk, its buffer and all children
 void freeChunkedBuffer(ChunkedBuffer *buf);
 
 /* Return current unfilled tail of chunks chain. The function performs fair
@@ -56,29 +56,29 @@ ChunkedNode* getChunkedTail(ChunkedBuffer *buf);
  * The more fast way is direct read of chunksCount field. The function is used
  * for sanity checks.
  */
-StgWord64 getChunksCount(ChunkedBuffer *buf);
+uint64_t getChunksCount(ChunkedBuffer *buf);
 
 // Return filled head, or return NULL
 ChunkedNode* popChunkedLog(ChunkedBuffer *buf);
 // Write data to the chunked buffer
-void writeChunked(ChunkedBuffer *buf, StgInt8 *data, StgWord64 size);
+void writeChunked(ChunkedBuffer *buf, uint8_t *data, uint64_t size);
 
 /*
  * Write data to eventlog chunked buffer, protected by mutex.
  */
-void writeEventLogChunked(StgInt8 *buf, StgWord64 size);
+void writeEventLogChunked(uint8_t *buf, uint64_t size);
 
 /*
  * Read data from chunked buffer, protected by mutex.
  * If returned size is not zero, parameter contains buffer
  * that must be destroyed by caller.
  */
-StgWord64 getEventLogChunk(StgInt8 **ptr);
+uint64_t getEventLogChunk(uint8_t **ptr);
 
 /*
  * Initalize eventlog buffer with given chunk size.
  */
-void initEventLogChunkedBuffer(StgWord64 chunkSize);
+void initEventLogChunkedBuffer(uint64_t chunkSize);
 /*
  * Destroy eventlog buffer.
  */
@@ -87,17 +87,17 @@ void destroyEventLogChunkedBuffer(void);
 /*
  * Resize chunks of inner buffer to the given size.
  */
-void resizeEventLogChunkedBuffer(StgWord64 chunkSize);
+void resizeEventLogChunkedBuffer(uint64_t chunkSize);
 
 /*
  * Return current size of chunk in eventlog memory buffer.
  */
-StgWord64 getEventLogChunkedBufferSize(void);
+uint64_t getEventLogChunkedBufferSize(void);
 
 /*
  * Return current count of chunks in eventlog memory buffer.
  */
-StgWord64 getEventLogChunksCount(void);
+uint64_t getEventLogChunksCount(void);
 
 #endif /* TRACING */
 
