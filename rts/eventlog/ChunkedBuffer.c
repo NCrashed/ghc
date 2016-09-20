@@ -17,15 +17,8 @@
 
 #ifdef TRACING
 
-ChunkedBuffer* eventlogBuffer = NULL;
-
-#ifdef THREADED_RTS
-Mutex eventlogMutex; // protected by this mutex
-StgBool mutexInited = rtsFalse;
-#endif
-
-// Same as getChunkedTail but doesn't decent to tail
-ChunkedNode* ensureTail(ChunkedBuffer *buf);
+// Allocates new tail with specified size
+ChunkedNode* allocateTail(ChunkedBuffer *buf, uint64_t chunkSize);
 
 ChunkedNode* newChunkedNode(ChunkedNode *prev, uint64_t chunkSize)
 {
@@ -33,20 +26,19 @@ ChunkedNode* newChunkedNode(ChunkedNode *prev, uint64_t chunkSize)
         "ChunkedNode struct");
     node->mem = stgMallocBytes(chunkSize, "ChunkedNode buffer");
     node->next = NULL;
+    node->size = chunkSize;
     if (prev != NULL) {
         prev->next = node;
     }
     return node;
 }
 
-ChunkedBuffer* newChunkedBuffer(uint64_t chunkSize)
+ChunkedBuffer* newChunkedBuffer(void)
 {
     ChunkedBuffer *buf = stgMallocBytes(sizeof(ChunkedBuffer), "ChunkedBuffer");
-    buf->head = newChunkedNode(NULL, chunkSize);
-    buf->tail = buf->head;
-    buf->chunksCount = 1;
-    buf->tailSize = 0;
-    buf->chunkSize = chunkSize;
+    buf->head = NULL;
+    buf->tail = NULL;
+    buf->chunksCount = 0;
     return buf;
 }
 
@@ -69,7 +61,7 @@ void freeChunkedBuffer(ChunkedBuffer *buf)
     }
 }
 
-ChunkedNode* ensureTail(ChunkedBuffer *buf) 
+ChunkedNode* allocateTail(ChunkedBuffer *buf, uint64_t chunkSize) 
 {
     ChunkedNode *newTail;
 
@@ -78,69 +70,22 @@ ChunkedNode* ensureTail(ChunkedBuffer *buf)
     }
 
     if (buf->head == NULL) {
-        buf->head = newChunkedNode(NULL, buf->chunkSize);
+        buf->head = newChunkedNode(NULL, chunkSize);
         buf->tail = buf->head;
-        buf->tailSize = 0;
         buf->chunksCount = 1;
         return buf->tail;
     }
 
     if (buf->tail == NULL) {
-        debugBelch("ensureTail: inconsistent chunked buffer");
+        debugBelch("allocateTail: inconsistent chunked buffer");
         return NULL;
     }
 
-    if(buf->tailSize == buf->chunkSize) {
-        newTail = newChunkedNode(buf->tail, buf->chunkSize);
-        buf->tail->next = newTail;
-        buf->tail = newTail;
-        buf->tailSize = 0;
-        buf->chunksCount += 1;
-        return newTail;
-    }
+    newTail = newChunkedNode(buf->tail, chunkSize);
+    buf->tail = newTail;
+    buf->chunksCount += 1;
 
-    return buf->tail;
-}
-
-ChunkedNode* getChunkedTail(ChunkedBuffer *buf)
-{
-    if (buf == NULL) {
-        return NULL;
-    }
-
-    if (buf->head == NULL) {
-        buf->head = newChunkedNode(NULL, buf->chunkSize);
-        buf->tail = buf->head;
-        buf->tailSize = 0;
-        buf->chunksCount = 1;
-    }
-
-    ChunkedNode* curNode = buf->head;
-    while(curNode->next != NULL) {
-        curNode = curNode->next;
-    }
-
-    if(buf->tailSize == buf->chunkSize) {
-        curNode->next = newChunkedNode(curNode, buf->chunkSize);
-        buf->tailSize = 0;
-        return curNode->next;
-    }
-
-    return curNode;
-}
-
-uint64_t getChunksCount(ChunkedBuffer *buf) {
-    if(buf == NULL || buf->head == NULL) {
-        return 0;
-    }
-
-    uint64_t i = 0;
-    ChunkedNode* cur = buf->head;
-    while(cur != NULL) {
-        cur = cur->next;
-        i = i + 1;
-    }
-    return i;
+    return newTail;
 }
 
 void writeChunked(ChunkedBuffer *buf, uint8_t *data, uint64_t size)
@@ -150,38 +95,18 @@ void writeChunked(ChunkedBuffer *buf, uint8_t *data, uint64_t size)
         return;
     }
 
-    ChunkedNode* curTail = ensureTail(buf);
+    ChunkedNode* curTail = allocateTail(buf, size);
     if (curTail == NULL) {
-        debugBelch("writeChunked: buffer isn't initalized!");
+        debugBelch("writeChunked: cannot allocate tail!");
         return;
     }
 
-    while(size > 0) {
-        uint64_t curReminder = buf->chunkSize - buf->tailSize;
-        if (curReminder > size) {
-            curReminder = size;
-        }
-        memcpy(curTail->mem + buf->tailSize, data, curReminder);
-        buf->tailSize = buf->tailSize + curReminder;
-        size = size - curReminder;
-        data = data + curReminder;
-
-        if (buf->tailSize == buf->chunkSize) {
-            curTail->next = newChunkedNode(curTail, buf->chunkSize);
-            curTail = curTail->next;
-            buf->tail = curTail;
-            buf->tailSize = 0;
-            buf->chunksCount += 1;
-        }
-    }
+    memcpy(curTail->mem, data, size);
 }
 
-ChunkedNode* popChunkedLog(ChunkedBuffer *buf) {
+ChunkedNode* popChunk(ChunkedBuffer *buf) 
+{
     if (buf == NULL || buf->head == NULL) {
-        return NULL;
-    }
-
-    if (buf->head->next == NULL && buf->tailSize != buf->chunkSize) {
         return NULL;
     }
 
@@ -190,115 +115,31 @@ ChunkedNode* popChunkedLog(ChunkedBuffer *buf) {
     buf->chunksCount -= 1;
     if (buf->head == NULL) {
         buf->tail = NULL;
-        buf->tailSize = 0;
     }
 
     return ret;
 }
 
-void writeEventLogChunked(uint8_t *data, uint64_t size) {
-    ACQUIRE_LOCK(&eventlogMutex);
-
-    writeChunked(eventlogBuffer, data, size);
-
-    RELEASE_LOCK(&eventlogMutex);
-}
-
-uint64_t getEventLogChunk(uint8_t** ptr) {
-    ACQUIRE_LOCK(&eventlogMutex);
+uint64_t popChunkMemory(ChunkedBuffer *buf, uint8_t** ptr) 
+{
     uint64_t size = 0;
     ChunkedNode *node;
 
-    node = popChunkedLog(eventlogBuffer);
+    node = popChunk(buf);
     if (node != NULL) {
         *ptr = node->mem;
-        size = eventlogBuffer->chunkSize;
+        size = node->size;
         stgFree(node);
     }
 
-    RELEASE_LOCK(&eventlogMutex);
     return size;
 }
 
-void initEventLogChunkedBuffer(uint64_t chunkSize) {
-#ifdef THREADED_RTS
-    if (!mutexInited) {
-        initMutex(&eventlogMutex);
-        mutexInited = rtsTrue;
-    }
-#endif
-
-    ACQUIRE_LOCK(&eventlogMutex);
-    if (eventlogBuffer == NULL) {
-        eventlogBuffer = newChunkedBuffer(chunkSize);
-    }
-
-    RELEASE_LOCK(&eventlogMutex);
-}
-
-void destroyEventLogChunkedBuffer(void) {
-    ACQUIRE_LOCK(&eventlogMutex);
-
-    if (eventlogBuffer != NULL) {
-        freeChunkedBuffer(eventlogBuffer);
-        eventlogBuffer = NULL;
-    }
-
-    RELEASE_LOCK(&eventlogMutex);
-}
-
-void resizeEventLogChunkedBuffer(uint64_t chunkSize)
+void freeChunkMemory(uint8_t *ptr) 
 {
-#ifdef THREADED_RTS
-    if (!mutexInited) {
-        initMutex(&eventlogMutex);
-        mutexInited = 1;
+    if (ptr != NULL) {
+        stgFree(ptr);
     }
-#endif
-
-    ACQUIRE_LOCK(&eventlogMutex);
-
-    if (eventlogBuffer == NULL) {
-        eventlogBuffer = newChunkedBuffer(chunkSize);
-    } else {
-        ChunkedBuffer *buf = eventlogBuffer;
-        eventlogBuffer = newChunkedBuffer(chunkSize);
-
-        ChunkedNode *node = buf->head;
-        while (node != NULL) {
-            uint64_t remain;
-            if (node->next == NULL) {
-                remain = buf->tailSize;
-            } else {
-                remain = buf->chunkSize;
-            }
-
-            writeChunked(eventlogBuffer, node->mem, remain);
-            node = node->next;
-        }
-
-        freeChunkedBuffer(buf);
-    }
-
-    RELEASE_LOCK(&eventlogMutex);
-}
-
-uint64_t getEventLogChunkedBufferSize(void)
-{
-    if (eventlogBuffer == NULL) {
-        return 0;
-    }
-
-    return eventlogBuffer->chunkSize;
-}
-
-uint64_t getEventLogChunksCount(void)
-{
-    if (eventlogBuffer == NULL) {
-        return 0;
-    }
-
-    return eventlogBuffer->chunksCount;
 }
 
 #endif /* TRACING */
