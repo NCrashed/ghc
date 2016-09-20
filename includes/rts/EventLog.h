@@ -37,9 +37,9 @@
  * is on. User might not want the header if it is switching to
  * already existed eventlog handle that was switched away recently.
  */
-void rts_setEventLogSink(FILE *sink,
-                         StgBool closePrev,
-                         StgBool emitHeader);
+void DLL_IMPORT_RTS rts_setEventLogSink(FILE    *sink,
+                                        StgBool  closePrev,
+                                        StgBool  emitHeader);
 
 /*
  * Get current file stream that is used for global event log sink.
@@ -48,7 +48,7 @@ void rts_setEventLogSink(FILE *sink,
  * rts_setEventLogSink(otherFileOrNull, false) is called. After that
  * you can do anything with the file stream.
  */
-FILE* rts_getEventLogSink(void);
+FILE* DLL_IMPORT_RTS rts_getEventLogSink(void);
 
 
 /*
@@ -75,14 +75,14 @@ FILE* rts_getEventLogSink(void);
  * If the RTS is not started with '-lm' flag, the function always returns 0 and
  * doesn't touch ptr parameter.
  */
-uint64_t rts_getEventLogChunk(uint8_t** ptr);
+uint64_t DLL_IMPORT_RTS rts_getEventLogChunk(uint8_t** ptr);
 
 /* Free memory that was received with rts_getEventLogChunk.
  *
  * When rts_getEventLogChunk returns non zero result its ptr conains memory
  * buffer that should be freed by user with the function.
  */
-void rts_freeEventLogChunk(uint8_t* ptr);
+void DLL_IMPORT_RTS rts_freeEventLogChunk(uint8_t* ptr);
 
 /*
  * Reallocate inner buffers to match the new size. The size should be not
@@ -90,11 +90,11 @@ void rts_freeEventLogChunk(uint8_t* ptr);
  *
  * If RTS started with '-lm' the chunks of memory buffer is also resized.
  */
-void rts_resizeEventLog(uint64_t size);
+void DLL_IMPORT_RTS rts_resizeEventLog(uint64_t size);
 
 /*
  * Return current size of eventlog buffers.
  */
-uint64_t rts_getEventLogBuffersSize(void);
+uint64_t DLL_IMPORT_RTS rts_getEventLogBuffersSize(void);
 
 #endif /* RTS_EVENTLOG_H */
