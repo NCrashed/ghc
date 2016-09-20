@@ -68,8 +68,21 @@ FILE* rts_getEventLogSink(void);
  * So there is a hard limit for length of the linked list. When the count is
  * reached new events are simply dropped off. See EVENTLOG_MAX_MEMORY_CHUNKS
  * macro.
+ *
+ * User owns the memory received via this function. The memory should be freed
+ * with rts_freeEventLogChunk function.
+ *
+ * If the RTS is not started with '-lm' flag, the function always returns 0 and
+ * doesn't touch ptr parameter.
  */
 uint64_t rts_getEventLogChunk(uint8_t** ptr);
+
+/* Free memory that was received with rts_getEventLogChunk.
+ *
+ * When rts_getEventLogChunk returns non zero result its ptr conains memory
+ * buffer that should be freed by user with the function.
+ */
+void rts_freeEventLogChunk(uint8_t* ptr);
 
 /*
  * Reallocate inner buffers to match the new size. The size should be not

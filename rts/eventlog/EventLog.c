@@ -1540,6 +1540,11 @@ uint64_t rts_getEventLogChunk(uint8_t **ptr)
     return res;
 }
 
+void rts_freeEventLogChunk(uint8_t* ptr)
+{
+    freeChunkMemory(ptr);
+}
+
 void rts_resizeEventLog(uint64_t size)
 {
     resizeEventLog(size);
@@ -1571,6 +1576,11 @@ FILE* rts_getEventLogSink(void)
 uint64_t rts_getEventLogChunk(uint8_t** ptr STG_UNUSED)
 {
   return 0;
+}
+
+void rts_freeEventLogChunk(uint8_t* ptr STG_UNUSED)
+{
+  return;
 }
 
 void rts_resizeEventLog(uint64_t size STG_UNUSED)
