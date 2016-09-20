@@ -58,6 +58,13 @@ EventsBuf eventBuf; // an EventsBuf not associated with any Capability
 Mutex eventBufMutex; // protected by this mutex
 #endif
 
+// A chunked buffer for in-memory storing of encoded events chunks.
+// The buffer is allocated only when the RTS is started with '-lm' flag.
+ChunkedBuffer *eventChunkedBuf = NULL; 
+#ifdef THREADED_RTS 
+Mutex eventChunkedBufMutex; // protected by this mutex
+#endif 
+
 char *EventDesc[] = {
   [EVENT_CREATE_THREAD]       = "Create thread",
   [EVENT_RUN_THREAD]          = "Run thread",
@@ -146,6 +153,10 @@ static StgBool hasRoomForVariableEvent(EventsBuf *eb, uint32_t payload_bytes);
 
 static void ensureRoomForEvent(EventsBuf *eb, EventTypeNum tag);
 static int ensureRoomForVariableEvent(EventsBuf *eb, StgWord16 size);
+
+static void initEventLogChunkedBuffer(void);
+static void destroyEventLogChunkedBuffer(void);
+static void writeEventLogChunk(uint8_t *buf, uint64_t size);
 
 static inline void postWord8(EventsBuf *eb, StgWord8 i)
 {
@@ -313,7 +324,7 @@ initEventLogging(void)
 
     // Init memory buffer before writing the header
     if (RtsFlags.TraceFlags.in_memory) {
-        initEventLogChunkedBuffer(currentEventLogSize);
+        initEventLogChunkedBuffer();
     }
 
     writeEventLoggingHeader(&eventBuf);
@@ -1335,9 +1346,9 @@ void printAndClearEventBuf (EventsBuf *ebuf)
             }
         }
         if (RtsFlags.TraceFlags.in_memory && ebuf->begin < ebuf->pos &&
-            getEventLogChunksCount() < EVENTLOG_MAX_MEMORY_CHUNKS) 
+            eventChunkedBuf->chunksCount < EVENTLOG_MAX_MEMORY_CHUNKS) 
         {
-            writeEventLogChunked(ebuf->begin, ebuf->pos - ebuf->begin);
+            writeEventLogChunk(ebuf->begin, ebuf->pos - ebuf->begin);
         }
 
         resetEventsBuf(ebuf);
@@ -1347,7 +1358,6 @@ void printAndClearEventBuf (EventsBuf *ebuf)
     }
 
     if (ebuf->size != currentEventLogSize) {
-        resetEventsBuf(ebuf);
         resizeEventsBuf(ebuf, currentEventLogSize);
     }
 }
@@ -1378,13 +1388,9 @@ void resizeEventLog(StgWord64 size)
 {
     ACQUIRE_LOCK(&eventBufMutex);
 
-    // Reallocate chunked buffer if enabled
-    if (RtsFlags.TraceFlags.in_memory) {
-        resizeEventLogChunkedBuffer(size);
-    }
-
     currentEventLogSize = size;
     // Capabilities buffers will be resized while flushing
+    // And there is no need to resize chunked buffer
 
     RELEASE_LOCK(&eventBufMutex);
 }
@@ -1459,6 +1465,33 @@ void postEventType(EventsBuf *eb, EventType *et)
     postInt32(eb, EVENT_ET_END);
 }
 
+void initEventLogChunkedBuffer(void)
+{
+    if (eventChunkedBuf == NULL) {
+        eventChunkedBuf = newChunkedBuffer();
+#ifdef THREADED_RTS
+        initMutex(&eventChunkedBufMutex);
+#endif
+    }
+}
+
+void destroyEventLogChunkedBuffer(void) 
+{
+    if (eventChunkedBuf != NULL) {
+        freeChunkedBuffer(eventChunkedBuf);
+#ifdef THREADED_RTS
+        closeMutex(&eventChunkedBufMutex);
+#endif
+    }
+}
+
+void writeEventLogChunk(uint8_t *buf, uint64_t size)
+{
+    ACQUIRE_LOCK(&eventChunkedBufMutex);
+    writeChunked(eventChunkedBuf, buf, size);
+    RELEASE_LOCK(&eventChunkedBufMutex);
+}
+
 void rts_setEventLogSink(FILE    *sink,
                          StgBool  closePrev,
                          StgBool  emitHeader)
@@ -1496,7 +1529,15 @@ FILE* rts_getEventLogSink()
 
 uint64_t rts_getEventLogChunk(uint8_t **ptr)
 {
-    return getEventLogChunk(ptr);
+    uint64_t res = 0;
+    
+    if (RtsFlags.TraceFlags.in_memory) {
+        ACQUIRE_LOCK(&eventChunkedBufMutex);
+        res = popChunkMemory(eventChunkedBuf, ptr);
+        RELEASE_LOCK(&eventChunkedBufMutex);
+    }
+
+    return res;
 }
 
 void rts_resizeEventLog(uint64_t size)
@@ -1506,10 +1547,13 @@ void rts_resizeEventLog(uint64_t size)
 
 uint64_t rts_getEventLogBuffersSize(void)
 {
+    uint64_t res;
+
     ACQUIRE_LOCK(&eventBufMutex);
-    uint64_t ret = currentEventLogSize;
+    res = currentEventLogSize;
     RELEASE_LOCK(&eventBufMutex);
-    return ret;
+
+    return res;
 }
 
 #else
